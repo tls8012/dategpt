@@ -1,7 +1,8 @@
-# DateGPT PySide6 desktop prototype
+# DateGPT Desktop
 
-This directory is a standalone desktop frontend for the existing DateGPT
-backend. It does not replace the Ren'Py files yet.
+This directory contains the official DateGPT PySide6 frontend. DateGPT runs as
+this desktop client plus the Python backend; there is no secondary game-engine
+frontend.
 
 ## Why QProcess
 
@@ -40,7 +41,7 @@ The frontend launches `BACKEND/backend.py` with the exact same
 `sys.executable` that is running the PySide application. There is no second
 backend virtual environment.
 
-## Implemented in this prototype
+## Implemented
 
 - installed cartridge list
 - local/GitHub cartridge install entry
