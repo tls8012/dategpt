@@ -38,6 +38,20 @@ def make_scenario(root: Path, game_name="테스트게임", content_root="content
 
 
 class FoundationTests(unittest.TestCase):
+    def test_markdown_fields_accept_asterisk_and_plus_bullets(self):
+        from dategpt.bootstrap.markdown import (
+            parse_markdown_fields,
+        )
+
+        parsed = parse_markdown_fields(
+            "* game_name: datellm\n"
+            "* game_id: abc123\n"
+            "+ gender: female\n"
+        )
+        self.assertEqual(parsed["game_name"], "datellm")
+        self.assertEqual(parsed["game_id"], "abc123")
+        self.assertEqual(parsed["gender"], "female")
+
     def test_markdown_fields_recover_windows_copy_artifacts(self):
         from dategpt.bootstrap.markdown import (
             parse_markdown_fields,
