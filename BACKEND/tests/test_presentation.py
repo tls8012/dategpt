@@ -1,50 +1,70 @@
 import unittest
 
-from dategpt.presentation import parse_presentation
+from pydantic import ValidationError
+
+from dategpt.presentation import VNResponse, coerce_vn_response
 
 
 class PresentationTests(unittest.TestCase):
-    def test_splits_narration_and_character_dialogue(self):
-        segments = parse_presentation(
-            "복도 끝에서 발소리가 멎었다. 모두가 문을 바라봤다.\n\n"
-            "ChatGPT: 늦어서 미안해. 오래 기다렸어?\n"
-            "Claude: 나는 방금 왔어."
-        )
-
-        self.assertEqual(
-            [item["kind"] for item in segments],
-            [
-                "narration",
-                "narration",
-                "dialogue",
-                "dialogue",
-                "dialogue",
-            ],
-        )
-        self.assertEqual(
-            [item["speaker"] for item in segments[-3:]],
-            ["ChatGPT", "ChatGPT", "Claude"],
-        )
-        self.assertEqual(
-            segments[0]["text"],
-            "복도 끝에서 발소리가 멎었다.",
-        )
-        self.assertEqual(
-            segments[3]["text"],
-            "오래 기다렸어?",
-        )
-
-    def test_plain_text_falls_back_to_narration(self):
-        segments = parse_presentation("문장이 하나뿐이다")
-        self.assertEqual(
-            segments,
-            [
+    def test_structured_response_keeps_order_and_plain_text(self):
+        response = VNResponse.model_validate({
+            "segments": [
                 {
                     "kind": "narration",
                     "speaker": "",
-                    "text": "문장이 하나뿐이다",
+                    "text": "복도 끝에서 발소리가 멎었다.",
+                },
+                {
+                    "kind": "dialogue",
+                    "speaker": "ChatGPT",
+                    "text": "늦어서 미안해.",
+                },
+                {
+                    "kind": "dialogue",
+                    "speaker": "Claude",
+                    "text": "나는 방금 왔어.",
+                },
+            ]
+        })
+
+        self.assertEqual(
+            response.plain_text(),
+            (
+                "복도 끝에서 발소리가 멎었다.\n"
+                "ChatGPT: 늦어서 미안해.\n"
+                "Claude: 나는 방금 왔어."
+            ),
+        )
+        self.assertEqual(
+            response.public_segments()[1]["speaker"],
+            "ChatGPT",
+        )
+
+    def test_dialogue_requires_speaker(self):
+        with self.assertRaises(ValidationError):
+            VNResponse.model_validate({
+                "segments": [
+                    {
+                        "kind": "dialogue",
+                        "speaker": "",
+                        "text": "안녕.",
+                    }
+                ]
+            })
+
+    def test_non_dialogue_speaker_is_cleared(self):
+        response = coerce_vn_response({
+            "segments": [
+                {
+                    "kind": "narration",
+                    "speaker": "Narrator",
+                    "text": "비가 내렸다.",
                 }
-            ],
+            ]
+        })
+        self.assertEqual(
+            response.public_segments()[0]["speaker"],
+            "",
         )
 
 
