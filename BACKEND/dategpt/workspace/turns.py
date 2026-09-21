@@ -175,6 +175,13 @@ class TurnJournal:
         data["preimages"] = [
             item.to_dict() for item in existing
         ]
+        data["postimages"] = [
+            self._current_image(
+                item.store,
+                item.path,
+            ).to_dict()
+            for item in existing
+        ]
         self._write_json(
             self._journal_path(turn_id),
             data,
@@ -212,6 +219,8 @@ class TurnJournal:
     def rollback(
         self,
         turn_id: Optional[str] = None,
+        *,
+        preserve: bool = False,
     ) -> Dict[str, Any]:
         ids = self._load_index()
         if not ids:
@@ -249,12 +258,10 @@ class TurnJournal:
             int(target_data.get("history_before", 0))
         )
 
-        for current_id in removed:
-            path = self._journal_path(current_id)
-            if path.exists():
-                path.unlink()
-
         self._save_index(ids[:target_index])
+
+        if not preserve:
+            self.discard_preserved(removed)
 
         return {
             "turn_id": target,
@@ -265,7 +272,54 @@ class TurnJournal:
                 target_data.get("assistant_text", "")
             ),
             "rolled_back_turn_ids": removed,
+            "preserved": bool(preserve),
         }
+
+    def restore_preserved(
+        self,
+        turn_ids: List[str],
+    ) -> None:
+        if not turn_ids:
+            return
+
+        active = self._load_index()
+        for turn_id in turn_ids:
+            data = self._load_journal(turn_id)
+            if data is None:
+                raise ValueError(
+                    "보존된 turn journal이 없습니다: {}".format(
+                        turn_id
+                    )
+                )
+            postimages = [
+                FilePreimage.from_dict(item)
+                for item in data.get("postimages", [])
+                if isinstance(item, dict)
+            ]
+            self._apply_images(postimages)
+
+            for record in data.get(
+                "history_records",
+                [],
+            ):
+                if isinstance(record, dict):
+                    self.history.append(record)
+
+            active.append(turn_id)
+
+        self._save_index(active)
+
+    def discard_preserved(
+        self,
+        turn_ids: List[str],
+    ) -> None:
+        active = set(self._load_index())
+        for turn_id in turn_ids:
+            if turn_id in active:
+                continue
+            path = self._journal_path(turn_id)
+            if path.exists():
+                path.unlink()
 
     def _commit(
         self,
@@ -286,6 +340,18 @@ class TurnJournal:
             "preimages": [
                 item.to_dict() for item in preimages
             ],
+            "postimages": [
+                self._current_image(
+                    item.store,
+                    item.path,
+                ).to_dict()
+                for item in preimages
+            ],
+            "history_records": (
+                self.history.records()[
+                    int(history_before):
+                ]
+            ),
         }
         self._write_json(
             self._journal_path(turn_id),
@@ -300,7 +366,13 @@ class TurnJournal:
         self,
         preimages: List[FilePreimage],
     ) -> None:
-        for item in preimages:
+        self._apply_images(preimages)
+
+    def _apply_images(
+        self,
+        images: List[FilePreimage],
+    ) -> None:
+        for item in images:
             store = self._store(item.store)
             if item.existed:
                 store.write_text(
@@ -309,6 +381,24 @@ class TurnJournal:
                 )
             else:
                 store.delete(item.path)
+
+    def _current_image(
+        self,
+        store_name: str,
+        path: str,
+    ) -> FilePreimage:
+        store = self._store(store_name)
+        existed = store.exists(path)
+        return FilePreimage(
+            store=store_name,
+            path=path,
+            existed=existed,
+            content=(
+                store.read_text(path)
+                if existed
+                else ""
+            ),
+        )
 
     def _store(self, name: str):
         if name == "save":
