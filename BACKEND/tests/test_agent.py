@@ -85,6 +85,142 @@ class AgentTests(unittest.TestCase):
                 "다음 장면 준비",
             )
 
+    def test_runner_journals_only_mutated_files_and_rolls_them_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            prompts, scenario, workspace = self.make_runtime(base)
+            workspace.save.write_text(
+                "entities/state.md",
+                "before",
+            )
+
+            captured = {}
+
+            class MutatingAgent:
+                def invoke(self, payload):
+                    captured["fs"].save_write(
+                        "entities/state.md",
+                        "after",
+                    )
+                    captured["fs"].scratchpad_write(
+                        "temp.md",
+                        "created",
+                    )
+                    return {
+                        "messages": [
+                            {
+                                "role": "assistant",
+                                "content": "done",
+                            }
+                        ]
+                    }
+
+            def tool_factory(fs):
+                captured["fs"] = fs
+                return []
+
+            runner = AgentRunner(
+                host=RuntimeHost(
+                    prompt_bundle=prompts,
+                    scenario=scenario,
+                    workspace=workspace,
+                ),
+                model="fake:model",
+                agent_factory=lambda **kwargs: MutatingAgent(),
+                tool_factory=tool_factory,
+            )
+            result = runner.run_turn("change")
+            self.assertEqual(result.text, "done")
+
+            turns = workspace.turns.list_turns()
+            self.assertEqual(len(turns), 1)
+            self.assertEqual(turns[0]["changed_files"], 2)
+            self.assertEqual(
+                workspace.save.read_text(
+                    "entities/state.md"
+                ),
+                "after",
+            )
+            self.assertTrue(
+                workspace.scratchpad.exists("temp.md")
+            )
+
+            workspace.turns.rollback(
+                turns[0]["turn_id"]
+            )
+            self.assertEqual(
+                workspace.save.read_text(
+                    "entities/state.md"
+                ),
+                "before",
+            )
+            self.assertFalse(
+                workspace.scratchpad.exists("temp.md")
+            )
+            self.assertEqual(
+                workspace.history.tail(10),
+                [],
+            )
+
+    def test_runner_failure_restores_uncommitted_tool_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            prompts, scenario, workspace = self.make_runtime(base)
+            workspace.save.write_text(
+                "entities/state.md",
+                "before",
+            )
+
+            captured = {}
+
+            class FailingAgent:
+                def invoke(self, payload):
+                    captured["fs"].save_write(
+                        "entities/state.md",
+                        "broken",
+                    )
+                    captured["fs"].scratchpad_write(
+                        "temp.md",
+                        "broken",
+                    )
+                    raise RuntimeError("boom")
+
+            def tool_factory(fs):
+                captured["fs"] = fs
+                return []
+
+            runner = AgentRunner(
+                host=RuntimeHost(
+                    prompt_bundle=prompts,
+                    scenario=scenario,
+                    workspace=workspace,
+                ),
+                model="fake:model",
+                agent_factory=lambda **kwargs: FailingAgent(),
+                tool_factory=tool_factory,
+            )
+
+            with self.assertRaises(RuntimeError):
+                runner.run_turn("change")
+
+            self.assertEqual(
+                workspace.save.read_text(
+                    "entities/state.md"
+                ),
+                "before",
+            )
+            self.assertFalse(
+                workspace.scratchpad.exists("temp.md")
+            )
+            self.assertEqual(
+                workspace.turns.list_turns(),
+                [],
+            )
+            self.assertEqual(
+                workspace.history.tail(10),
+                [],
+            )
+
     def test_runner_uses_one_turn_system_prompt_and_own_history(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
