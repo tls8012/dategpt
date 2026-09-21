@@ -1,6 +1,8 @@
-import sys
 import json
-import time
+import sys
+
+from dategpt.controls import ControlState
+from dategpt.host import RuntimeHost
 
 
 # pipe에서도 한글 인코딩을 명확히 맞춘다.
@@ -14,6 +16,9 @@ if hasattr(sys.stdout, "reconfigure"):
     )
 
 
+host = RuntimeHost(controls=ControlState())
+
+
 def send(data):
     print(
         json.dumps(
@@ -24,67 +29,63 @@ def send(data):
     )
 
 
+def send_control_response(response):
+    if response.controls is not None:
+        send({
+            "type": "control_state",
+            "controls": response.controls,
+        })
+
+    send({
+        "type": "reply",
+        "text": response.message,
+    })
+
+
 def handle(msg):
-
     msg_type = msg.get("type")
-
 
     if msg_type == "shutdown":
         return False
 
-
     if msg_type == "ping":
-
-        send({
-            "type": "status",
-            "message": "ping 처리중..."
-        })
-
-        time.sleep(3)
-
         send({
             "type": "reply",
-            "text": "pong — 백엔드 살아있음"
+            "text": "pong — 백엔드 살아있음",
         })
-
         return True
 
+    # Deterministic controls are always routed before any future LLM call.
+    control_response = host.route_control(msg)
+    if control_response.handled:
+        send_control_response(control_response)
+        return True
 
     if msg_type == "say":
-
         text = msg.get("text", "")
 
-        # 즉시 frontend로 중간 상태 전달.
         send({
             "type": "status",
-            "message": "메세지 처리중..."
+            "message": "메세지 처리중...",
         })
 
-        # LLM 호출 흉내.
-        time.sleep(3)
-
+        # AgentRunner will replace this stub. The important boundary already
+        # exists: controls above never consume an LLM call.
         send({
             "type": "reply",
-            "text": "백엔드가 받음: {}".format(text)
+            "text": "백엔드가 받음: {}".format(text),
         })
-
         return True
-
 
     send({
         "type": "error",
-        "message": "알 수 없는 message type: {}".format(
-            msg_type
-        )
+        "message": "알 수 없는 message type: {}".format(msg_type),
     })
-
     return True
 
 
 def main():
-
     for line in sys.stdin:
-
         line = line.strip()
 
         if not line:
@@ -92,20 +93,16 @@ def main():
 
         try:
             msg = json.loads(line)
-
             keep_running = handle(msg)
-
             if not keep_running:
                 break
-
-        except Exception as e:
-
+        except Exception as exc:
             send({
                 "type": "error",
                 "message": "{}: {}".format(
-                    type(e).__name__,
-                    e,
-                )
+                    type(exc).__name__,
+                    exc,
+                ),
             })
 
 

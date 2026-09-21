@@ -17,6 +17,8 @@ venv/
 logs/
 runtime/
 saves/
+user_data/
+BACKEND/user_data/
 
 # Ren'Py generated/cache
 cache/
