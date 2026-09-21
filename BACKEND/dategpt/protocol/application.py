@@ -13,6 +13,7 @@ from ..bootstrap import (
     SessionInitializer,
     UnknownGameInstance,
 )
+from ..cartridges import CartridgeLibrary
 from ..controls import ControlRouter, ControlState
 from ..host import RuntimeHost
 from ..models import (
@@ -75,6 +76,13 @@ class BackendApplication:
             "DATEGPT_RUNTIME_DIR",
             self.backend_dir / "user_data" / "runtime",
         )
+        self.cartridge_base = _env_path(
+            "DATEGPT_CARTRIDGE_DIR",
+            self.backend_dir / "user_data" / "cartridges",
+        )
+        self.cartridges = CartridgeLibrary(
+            self.cartridge_base
+        )
 
         self.model_settings_store = (
             model_settings_store
@@ -121,6 +129,24 @@ class BackendApplication:
                         "reply",
                         request_id,
                         text="pong — 백엔드 살아있음",
+                    )
+                ]
+
+            if message_type == "install_cartridge":
+                return self._install_cartridge(
+                    message,
+                    request_id=request_id,
+                )
+
+            if message_type == "list_cartridges":
+                return [
+                    _event(
+                        "cartridge_list",
+                        request_id,
+                        cartridges=[
+                            item.public_dict()
+                            for item in self.cartridges.list_installed()
+                        ],
                     )
                 ]
 
@@ -318,16 +344,43 @@ class BackendApplication:
                 ).event(request_id)
             ]
 
+    def _install_cartridge(
+        self,
+        message: Mapping[str, Any],
+        *,
+        request_id,
+    ) -> List[dict]:
+        source_path = str(
+            message.get("source_path", "")
+        ).strip()
+        if not source_path:
+            raise ProtocolError(
+                "INVALID_REQUEST",
+                "install_cartridge.source_path가 필요합니다.",
+            )
+
+        installed = self.cartridges.install_directory(
+            Path(source_path),
+            replace=bool(
+                message.get("replace", False)
+            ),
+        )
+        return [
+            _event(
+                "cartridge_installed",
+                request_id,
+                cartridge=installed.public_dict(),
+            )
+        ]
+
     def _open_session(
         self,
         message: Mapping[str, Any],
         *,
         request_id,
     ) -> List[dict]:
-        scenario_path = _message_or_env_path(
-            message,
-            "scenario_path",
-            "DATEGPT_SCENARIO_DIR",
+        scenario_path = self._resolve_scenario_path(
+            message
         )
         prompt_path = _message_or_env_path(
             message,
@@ -396,6 +449,12 @@ class BackendApplication:
                 ),
                 onboarding=(
                     onboarding.public_state()
+                ),
+                build_version=(
+                    result.manifest.build_version
+                ),
+                format_version=(
+                    result.manifest.format_version
                 ),
             )
         ]
@@ -794,6 +853,47 @@ class BackendApplication:
             ),
             onboarding=(
                 session.onboarding.public_state()
+            ),
+        )
+
+    def _resolve_scenario_path(
+        self,
+        message: Mapping[str, Any],
+    ) -> Path:
+        direct = str(
+            message.get("scenario_path", "")
+        ).strip()
+        if direct:
+            return Path(
+                direct
+            ).expanduser().resolve()
+
+        game_name = str(
+            message.get("game_name", "")
+        ).strip()
+        if game_name:
+            build_version = str(
+                message.get("build_version", "")
+            ).strip() or None
+            return self.cartridges.resolve(
+                game_name,
+                build_version=build_version,
+            ).path
+
+        env_path = os.environ.get(
+            "DATEGPT_SCENARIO_DIR",
+            "",
+        ).strip()
+        if env_path:
+            return Path(
+                env_path
+            ).expanduser().resolve()
+
+        raise ProtocolError(
+            "PATH_NOT_CONFIGURED",
+            (
+                "scenario_path, game_name 또는 "
+                "DATEGPT_SCENARIO_DIR 설정이 필요합니다."
             ),
         )
 

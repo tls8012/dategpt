@@ -122,3 +122,45 @@ maintenance instruction to ordinary conversation history.
 
 Expected failures use stable frontend-facing codes rather than Python exception
 class names.
+
+
+## Local cartridge installation and mount
+
+Runtime play is local-first. A built Distribution directory can be copied into
+the DateGPT cartridge library:
+
+```json
+{
+  "type": "install_cartridge",
+  "source_path": "/path/to/datellm/distribution"
+}
+```
+
+The parent cartridge directory is also accepted when it contains
+`distribution/file-manifest.md`.
+
+Installed layout:
+
+```text
+user_data/cartridges/GAME_NAME/BUILD_VERSION/
+```
+
+`assets/` and image files are optional. The installer requires only a valid
+`file-manifest.md`; format version 1 is currently supported. Symlinks are
+rejected before copying so an installed cartridge cannot escape its source tree.
+
+An installed cartridge can then be mounted without a direct scenario path:
+
+```json
+{
+  "type": "open_session",
+  "game_name": "datellm",
+  "build_version": "1",
+  "prompt_path": "/path/to/scaffolding"
+}
+```
+
+When build_version is omitted, the newest installed build is chosen
+deterministically. `list_cartridges` reports installed builds.
+
+Direct `scenario_path` mount remains available for development.

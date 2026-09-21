@@ -71,6 +71,37 @@ class FakeRunner:
         )
 
 
+def write_datellm_style_distribution(root: Path):
+    root.mkdir(parents=True)
+    (root / "file-manifest.md").write_text(
+        "# datellm Distribution\n\n"
+        "GAME_NAME: datellm\n"
+        "BUILD_VERSION: 1\n"
+        "FORMAT_VERSION: 1\n"
+        "CONTENT_ROOT: datellm/distribution\n",
+        encoding="utf-8",
+    )
+    (root / "story").mkdir()
+    (root / "story" / "welcome.md").write_text(
+        "welcome",
+        encoding="utf-8",
+    )
+    (root / "character_manifest.md").write_text(
+        (
+            "ChatGPT | roles: 같은 반 학생, 연애 대상, LLM | "
+            "path: entities/characters/ChatGPT.md\n"
+        ),
+        encoding="utf-8",
+    )
+    (root / "entities" / "characters").mkdir(
+        parents=True
+    )
+    (root / "entities" / "characters" / "ChatGPT.md").write_text(
+        "# ChatGPT",
+        encoding="utf-8",
+    )
+
+
 def write_scenario(root: Path):
     root.mkdir(parents=True)
     (root / "file-manifest.md").write_text(
@@ -140,6 +171,73 @@ class ProtocolTests(unittest.TestCase):
             "prompt_path": str(prompts),
         })
         return app, scenario, prompts, opened
+
+    def test_install_and_mount_datellm_style_cartridge_without_assets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "datellm" / "distribution"
+            prompts = base / "prompts"
+            write_datellm_style_distribution(source)
+            write_prompts(prompts)
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "DATEGPT_SAVE_DIR": str(base / "games"),
+                    "DATEGPT_RUNTIME_DIR": str(base / "runtime"),
+                    "DATEGPT_CARTRIDGE_DIR": str(base / "cartridges"),
+                },
+                clear=False,
+            ):
+                app = self.make_app(base)
+
+            installed = app.handle({
+                "type": "install_cartridge",
+                "request_id": "i1",
+                "source_path": str(source.parent),
+            })
+            self.assertEqual(
+                installed[0]["type"],
+                "cartridge_installed",
+            )
+            self.assertEqual(
+                installed[0]["cartridge"]["game_name"],
+                "datellm",
+            )
+            self.assertEqual(
+                installed[0]["cartridge"]["build_version"],
+                "1",
+            )
+
+            opened = app.handle({
+                "type": "open_session",
+                "request_id": "i2",
+                "game_name": "datellm",
+                "build_version": "1",
+                "prompt_path": str(prompts),
+            })
+            self.assertEqual(
+                opened[0]["type"],
+                "session_opened",
+            )
+            self.assertEqual(
+                opened[0]["game_name"],
+                "datellm",
+            )
+            self.assertEqual(
+                opened[0]["build_version"],
+                "1",
+            )
+            self.assertTrue(
+                app.active_session.scenario.exists(
+                    "entities/characters/ChatGPT.md"
+                )
+            )
+            self.assertFalse(
+                app.active_session.scenario.exists(
+                    "assets/example.png"
+                )
+            )
 
     def test_direct_setup_play_and_checkpoint(self):
         with tempfile.TemporaryDirectory() as tmp:

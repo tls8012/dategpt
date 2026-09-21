@@ -19,6 +19,8 @@ def _parse_bool(value: str, default: bool = False) -> bool:
 class ScenarioManifest:
     game_name: str
     content_root: str
+    build_version: str = "unversioned"
+    format_version: str = "1"
 
     @classmethod
     def parse(cls, text: str) -> "ScenarioManifest":
@@ -29,7 +31,18 @@ class ScenarioManifest:
             raise ValueError("file-manifest.md is missing GAME_NAME")
         if not content_root:
             raise ValueError("file-manifest.md is missing CONTENT_ROOT")
-        return cls(game_name=game_name, content_root=content_root)
+        return cls(
+            game_name=game_name,
+            content_root=content_root,
+            build_version=(
+                fields.get("BUILD_VERSION", "").strip()
+                or "unversioned"
+            ),
+            format_version=(
+                fields.get("FORMAT_VERSION", "").strip()
+                or "1"
+            ),
+        )
 
 
 @dataclass(frozen=True)

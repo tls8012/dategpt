@@ -138,12 +138,20 @@ def parse_character_manifest(
 
     for raw_line in text.splitlines():
         line = raw_line.strip()
-        if not line.startswith("- "):
+        if not line or line.startswith("#"):
+            continue
+
+        payload = (
+            line[2:].strip()
+            if line.startswith("- ")
+            else line
+        )
+        if "|" not in payload:
             continue
 
         segments = [
             segment.strip()
-            for segment in line[2:].split("|")
+            for segment in payload.split("|")
         ]
         if not segments:
             continue
