@@ -41,7 +41,19 @@ def parse_markdown_fields(text: str) -> Dict[str, str]:
     values: Dict[str, str] = {}
 
     for raw_line in text.splitlines():
-        line = raw_line.strip()
+        line = unicodedata.normalize(
+            "NFC",
+            str(raw_line),
+        )
+        for invisible in (
+            "\ufeff",
+            "\u200b",
+            "\u200c",
+            "\u200d",
+            "\u2060",
+        ):
+            line = line.replace(invisible, "")
+        line = line.strip()
         if not line or line.startswith("#"):
             continue
 
