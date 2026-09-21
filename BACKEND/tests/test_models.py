@@ -78,47 +78,85 @@ class ModelSettingsTests(unittest.TestCase):
                     response.message,
                 )
 
-    def test_model_factory_supports_openai_and_anthropic(self):
+    def test_model_factory_dispatches_through_init_chat_model(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = ModelSettingsStore(
                 Path(tmp) / "model_settings.json"
             )
             calls = []
 
-            def fake_openai(**kwargs):
-                calls.append(("openai", kwargs))
-                return ("openai", kwargs)
-
-            def fake_anthropic(**kwargs):
-                calls.append(("anthropic", kwargs))
-                return ("anthropic", kwargs)
+            def fake_initializer(**kwargs):
+                calls.append(dict(kwargs))
+                return dict(kwargs)
 
             factory = ModelFactory(
                 store,
-                openai_factory=fake_openai,
-                anthropic_factory=fake_anthropic,
+                initializer=fake_initializer,
             )
 
             store.set_model("openai", "gpt-test")
             store.set_api_key("openai", "openai-key")
             model = factory.create()
-            self.assertEqual(model[0], "openai")
-            self.assertEqual(model[1]["model"], "gpt-test")
-            self.assertEqual(model[1]["api_key"], "openai-key")
-            self.assertTrue(model[1]["use_responses_api"])
+
             self.assertEqual(
-                model[1]["output_version"],
+                model["model"],
+                "gpt-test",
+            )
+            self.assertEqual(
+                model["model_provider"],
+                "openai",
+            )
+            self.assertEqual(
+                model["api_key"],
+                "openai-key",
+            )
+            self.assertTrue(
+                model["use_responses_api"]
+            )
+            self.assertEqual(
+                model["output_version"],
                 "responses/v1",
             )
+            self.assertNotIn(
+                "anthropic_api_key",
+                model,
+            )
 
-            store.set_model("anthropic", "claude-test")
-            store.set_api_key("anthropic", "anthropic-key")
+            store.set_model(
+                "anthropic",
+                "claude-test",
+            )
+            store.set_api_key(
+                "anthropic",
+                "anthropic-key",
+            )
             model = factory.create()
-            self.assertEqual(model[0], "anthropic")
-            self.assertEqual(model[1]["model"], "claude-test")
-            self.assertEqual(model[1]["api_key"], "anthropic-key")
 
-            self.assertEqual(len(calls), 2)
+            self.assertEqual(
+                model["model"],
+                "claude-test",
+            )
+            self.assertEqual(
+                model["model_provider"],
+                "anthropic",
+            )
+            self.assertEqual(
+                model["anthropic_api_key"],
+                "anthropic-key",
+            )
+            self.assertNotIn(
+                "api_key",
+                model,
+            )
+            self.assertNotIn(
+                "use_responses_api",
+                model,
+            )
+
+            self.assertEqual(
+                len(calls),
+                2,
+            )
 
     def test_model_factory_requires_model_and_key(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -127,7 +165,7 @@ class ModelSettingsTests(unittest.TestCase):
             )
             factory = ModelFactory(
                 store,
-                openai_factory=lambda **kwargs: kwargs,
+                initializer=lambda **kwargs: kwargs,
             )
 
             with self.assertRaises(ModelNotConfigured):

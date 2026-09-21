@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 from .settings import ModelSettingsStore
 
@@ -10,18 +10,20 @@ class ModelNotConfigured(RuntimeError):
 
 
 class ModelFactory:
-    """Create the currently selected LangChain chat model on demand."""
+    """Build the selected LangChain chat model from DateGPT settings.
+
+    DateGPT owns validation and the small amount of provider-specific policy we
+    actually need. LangChain owns provider dispatch through init_chat_model().
+    """
 
     def __init__(
         self,
         settings_store: ModelSettingsStore,
         *,
-        openai_factory: Optional[Callable[..., Any]] = None,
-        anthropic_factory: Optional[Callable[..., Any]] = None,
+        initializer: Optional[Callable[..., Any]] = None,
     ) -> None:
         self.settings_store = settings_store
-        self._openai_factory = openai_factory
-        self._anthropic_factory = anthropic_factory
+        self._initializer = initializer
 
     def create(self) -> Any:
         settings = self.settings_store.load()
@@ -45,42 +47,50 @@ class ModelFactory:
                 )
             )
 
-        if settings.provider == "openai":
-            factory = self._openai_factory or _load_openai_factory()
-            return factory(
-                model=settings.model,
-                api_key=api_key,
-                use_responses_api=True,
-                output_version="responses/v1",
-            )
+        initializer = (
+            self._initializer
+            or _load_chat_model_initializer()
+        )
 
-        if settings.provider == "anthropic":
-            factory = self._anthropic_factory or _load_anthropic_factory()
-            return factory(
-                model=settings.model,
-                api_key=api_key,
-            )
-
-        raise ModelNotConfigured(
-            "지원하지 않는 provider: {}".format(settings.provider)
+        return initializer(
+            model=settings.model,
+            model_provider=settings.provider,
+            **_provider_kwargs(
+                settings.provider,
+                api_key,
+            ),
         )
 
 
-def _load_openai_factory():
-    try:
-        from langchain_openai import ChatOpenAI
-    except ImportError as exc:
-        raise RuntimeError(
-            "OpenAI provider support requires langchain-openai."
-        ) from exc
-    return ChatOpenAI
+def _provider_kwargs(
+    provider: str,
+    api_key: str,
+) -> Dict[str, Any]:
+    if provider == "openai":
+        return {
+            "api_key": api_key,
+            "use_responses_api": True,
+            "output_version": "responses/v1",
+        }
+
+    if provider == "anthropic":
+        return {
+            "anthropic_api_key": api_key,
+        }
+
+    raise ModelNotConfigured(
+        "지원하지 않는 provider: {}".format(
+            provider
+        )
+    )
 
 
-def _load_anthropic_factory():
+def _load_chat_model_initializer():
     try:
-        from langchain_anthropic import ChatAnthropic
+        from langchain.chat_models import init_chat_model
     except ImportError as exc:
         raise RuntimeError(
-            "Anthropic provider support requires langchain-anthropic."
+            "LangChain chat model support requires langchain."
         ) from exc
-    return ChatAnthropic
+
+    return init_chat_model
