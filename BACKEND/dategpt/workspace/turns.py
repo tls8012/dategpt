@@ -88,6 +88,17 @@ class TurnTransaction:
         )
         self._committed = True
 
+    def amend_latest(self) -> None:
+        if self._committed:
+            raise RuntimeError("turn transaction already committed")
+        self.manager.amend_latest(
+            [
+                self._preimages[key]
+                for key in self._order
+            ]
+        )
+        self._committed = True
+
     def rollback_uncommitted(self) -> None:
         if self._committed:
             return
