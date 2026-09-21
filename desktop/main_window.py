@@ -492,6 +492,11 @@ class GamePage(QWidget):
                 segment.get("speaker", "")
             ).strip(),
             "text": text,
+            "assets": [
+                str(value).strip()
+                for value in segment.get("assets", [])
+                if str(value).strip()
+            ],
         }
         self._segments.append(item)
         if self._segment_index < 0:
