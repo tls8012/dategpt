@@ -18,9 +18,42 @@ class FakeRunner:
         self.recorded_assistant = []
 
     def run_turn(self, text):
+        if text == "__fail__":
+            raise RuntimeError("forced test failure")
+
         self.turns.append(text)
+        transaction = self.host.workspace.turns.begin()
+        transaction.capture(
+            "save",
+            self.host.workspace.save,
+            "story/state.md",
+        )
+        self.host.workspace.save.write_text(
+            "story/state.md",
+            text,
+        )
+        self.host.workspace.history.append(
+            {
+                "role": "user",
+                "text": text,
+                "prompt_fingerprint": "test",
+            }
+        )
+        reply = "AI: " + text
+        self.host.workspace.history.append(
+            {
+                "role": "assistant",
+                "text": reply,
+                "prompt_fingerprint": "test",
+            }
+        )
+        transaction.commit(
+            user_text=text,
+            assistant_text=reply,
+            prompt_fingerprint="test",
+        )
         return AgentRunResult(
-            text="AI: " + text,
+            text=reply,
             prompt_fingerprint="test",
             raw_result={},
         )
@@ -465,6 +498,195 @@ class ProtocolTests(unittest.TestCase):
             self.assertEqual(
                 app.active_session.initialization.game_id,
                 second_id,
+            )
+
+    def test_turn_rollback_restores_sparse_save_and_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+
+            first = app.handle({
+                "type": "play",
+                "text": "first",
+            })
+            second = app.handle({
+                "type": "play",
+                "text": "second",
+            })
+            self.assertEqual(first[0]["text"], "AI: first")
+            self.assertEqual(second[0]["text"], "AI: second")
+
+            turns = app.handle({
+                "type": "list_turns",
+            })[0]["turns"]
+            self.assertEqual(len(turns), 2)
+            self.assertEqual(
+                app.active_session.workspace.save.read_text(
+                    "story/state.md"
+                ),
+                "second",
+            )
+
+            rolled_back = app.handle({
+                "type": "rollback_turn",
+                "turn_id": turns[1]["turn_id"],
+            })
+            self.assertEqual(
+                rolled_back[0]["type"],
+                "turn_rolled_back",
+            )
+            self.assertEqual(
+                app.active_session.workspace.save.read_text(
+                    "story/state.md"
+                ),
+                "first",
+            )
+            self.assertEqual(
+                len(
+                    app.active_session.workspace.history.tail(
+                        100
+                    )
+                ),
+                2,
+            )
+
+    def test_edit_turn_discards_future_and_creates_new_head(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+            app.handle({"type": "play", "text": "first"})
+            app.handle({"type": "play", "text": "second"})
+            app.handle({"type": "play", "text": "third"})
+
+            turns = app.handle({
+                "type": "list_turns",
+            })[0]["turns"]
+            edited = app.handle({
+                "type": "edit_turn",
+                "turn_id": turns[1]["turn_id"],
+                "text": "changed",
+            })
+
+            self.assertEqual(
+                edited[0]["type"],
+                "turn_edited",
+            )
+            self.assertEqual(
+                edited[0]["text"],
+                "AI: changed",
+            )
+            self.assertEqual(
+                [
+                    item["user_text"]
+                    for item in edited[0]["turns"]
+                ],
+                ["first", "changed"],
+            )
+            self.assertEqual(
+                app.active_session.workspace.save.read_text(
+                    "story/state.md"
+                ),
+                "changed",
+            )
+
+    def test_failed_turn_edit_restores_original_head(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+            app.handle({"type": "play", "text": "first"})
+            app.handle({"type": "play", "text": "second"})
+
+            turns = app.handle({
+                "type": "list_turns",
+            })[0]["turns"]
+            failed = app.handle({
+                "type": "edit_turn",
+                "turn_id": turns[0]["turn_id"],
+                "text": "__fail__",
+            })
+            self.assertEqual(
+                failed[0]["type"],
+                "error",
+            )
+
+            restored = app.handle({
+                "type": "list_turns",
+            })[0]["turns"]
+            self.assertEqual(
+                [item["user_text"] for item in restored],
+                ["first", "second"],
+            )
+            self.assertEqual(
+                app.active_session.workspace.save.read_text(
+                    "story/state.md"
+                ),
+                "second",
+            )
+            history = (
+                app.active_session.workspace.history.tail(100)
+            )
+            self.assertEqual(
+                [item["text"] for item in history[-4:]],
+                [
+                    "first",
+                    "AI: first",
+                    "second",
+                    "AI: second",
+                ],
+            )
+
+    def test_regenerate_turn_reuses_original_user_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+            app.handle({"type": "play", "text": "again"})
+            turn_id = app.handle({
+                "type": "list_turns",
+            })[0]["turns"][0]["turn_id"]
+
+            regenerated = app.handle({
+                "type": "regenerate_turn",
+                "turn_id": turn_id,
+            })
+            self.assertEqual(
+                regenerated[0]["type"],
+                "turn_regenerated",
+            )
+            self.assertEqual(
+                regenerated[0]["user_text"],
+                "again",
+            )
+            self.assertEqual(
+                regenerated[0]["text"],
+                "AI: again",
             )
 
     def test_model_commands_work_without_active_session(self):
