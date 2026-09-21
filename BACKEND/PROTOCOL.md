@@ -147,7 +147,10 @@ state immediately.
 `get_controls`, `set_control`, and `set_controls` are deterministic engine
 operations and do not call the LLM. `set_controls` accepts a controls object
 and is used by the desktop settings panel for language, initiative, and
-world_consistency.
+world_consistency. Scenario-specific controls are also supported as arbitrary
+string key/value pairs. A Distribution may provide their new-game defaults in
+file-manifest.md as `control.<key>: <default>`; the active value is persisted
+without that prefix in init완료.md and is included in every turn's controls.
 
 checkpoint runs the runtime semantic save command without appending that
 maintenance instruction to ordinary conversation history.
