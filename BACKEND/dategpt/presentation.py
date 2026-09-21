@@ -1,109 +1,100 @@
 from __future__ import annotations
 
-import re
-from typing import Dict, List
+from typing import Dict, List, Literal
+
+from pydantic import BaseModel, Field, model_validator
 
 
-_SPEAKER_RE = re.compile(
-    r"^\s*(?:\*\*)?([^\n:：]{1,40}?)(?:\*\*)?\s*[:：]\s*(.+?)\s*$"
-)
-_SENTENCE_RE = re.compile(
-    r".+?(?:[.!?…。！？]+(?:[\"'”’」』)\]]*)|$)",
-    re.DOTALL,
-)
+class VNLine(BaseModel):
+    """One visual-novel presentation unit.
 
-
-def parse_presentation(text: str) -> List[Dict[str, str]]:
-    """Split one model reply into VN-sized narration/dialogue segments.
-
-    The runtime prompt asks the model to format spoken dialogue as
-    Character: text. We preserve that convention and split each block into
-    sentence-sized units so the frontend can page through them.
+    Keep each unit as close to one complete sentence as practical. Narration
+    has no speaker. Dialogue names the speaking character explicitly.
     """
 
-    raw = str(text or "").replace("\r\n", "\n").strip()
-    if not raw:
-        return []
+    kind: Literal["narration", "dialogue", "system"] = Field(
+        description=(
+            "narration for prose/action, dialogue for spoken character lines, "
+            "system only for out-of-world notices"
+        )
+    )
+    speaker: str = Field(
+        default="",
+        description=(
+            "Exact visible speaker name for dialogue; empty for narration/system"
+        ),
+    )
+    text: str = Field(
+        min_length=1,
+        description=(
+            "One complete display unit, preferably one sentence. "
+            "Do not include a 'Speaker:' prefix."
+        ),
+    )
 
-    segments: List[Dict[str, str]] = []
-    narration_lines: List[str] = []
+    @model_validator(mode="after")
+    def validate_speaker(self):
+        self.text = self.text.strip()
+        self.speaker = self.speaker.strip()
 
-    def flush_narration() -> None:
-        if not narration_lines:
-            return
-        paragraph = " ".join(
-            line.strip()
-            for line in narration_lines
-            if line.strip()
-        ).strip()
-        narration_lines.clear()
-        for sentence in _split_sentences(paragraph):
-            segments.append(
-                {
-                    "kind": "narration",
-                    "speaker": "",
-                    "text": sentence,
-                }
+        if self.kind == "dialogue" and not self.speaker:
+            raise ValueError(
+                "dialogue segments require a speaker"
             )
+        if self.kind != "dialogue":
+            self.speaker = ""
+        return self
 
-    for line in raw.split("\n"):
-        stripped = line.strip()
-        if not stripped:
-            flush_narration()
-            continue
+    def public_dict(self) -> Dict[str, str]:
+        return {
+            "kind": self.kind,
+            "speaker": self.speaker,
+            "text": self.text,
+        }
 
-        match = _SPEAKER_RE.match(stripped)
-        if match and _looks_like_speaker(match.group(1)):
-            flush_narration()
-            speaker = _clean_speaker(match.group(1))
-            for sentence in _split_sentences(
-                match.group(2).strip()
-            ):
-                segments.append(
-                    {
-                        "kind": "dialogue",
-                        "speaker": speaker,
-                        "text": sentence,
-                    }
+
+class VNResponse(BaseModel):
+    """Structured final response rendered by the DateGPT visual-novel UI."""
+
+    segments: List[VNLine] = Field(
+        min_length=1,
+        description=(
+            "Ordered visual-novel display units. Split narration and every "
+            "speaker change. Prefer one sentence per segment so the UI can "
+            "advance naturally with Space."
+        ),
+    )
+
+    def plain_text(self) -> str:
+        lines = []
+        for segment in self.segments:
+            if segment.kind == "dialogue":
+                lines.append(
+                    "{}: {}".format(
+                        segment.speaker,
+                        segment.text,
+                    )
                 )
-            continue
+            else:
+                lines.append(segment.text)
+        return "\n".join(lines).strip()
 
-        narration_lines.append(stripped)
-
-    flush_narration()
-
-    if not segments:
+    def public_segments(self) -> List[Dict[str, str]]:
         return [
-            {
-                "kind": "narration",
-                "speaker": "",
-                "text": raw,
-            }
+            segment.public_dict()
+            for segment in self.segments
         ]
-    return segments
 
 
-def _split_sentences(text: str) -> List[str]:
-    value = " ".join(str(text).split())
-    if not value:
-        return []
-
-    parts = [
-        match.group(0).strip()
-        for match in _SENTENCE_RE.finditer(value)
-        if match.group(0).strip()
-    ]
-    return parts or [value]
-
-
-def _clean_speaker(value: str) -> str:
-    return str(value).strip().strip("*").strip()
-
-
-def _looks_like_speaker(value: str) -> bool:
-    speaker = _clean_speaker(value)
-    if not speaker or len(speaker) > 30:
-        return False
-    if any(mark in speaker for mark in ".!?…。！？/\\"):
-        return False
-    return True
+def coerce_vn_response(value) -> VNResponse:
+    if isinstance(value, VNResponse):
+        return value
+    if isinstance(value, dict):
+        return VNResponse.model_validate(value)
+    if hasattr(value, "model_dump"):
+        return VNResponse.model_validate(
+            value.model_dump()
+        )
+    raise TypeError(
+        "structured_response is not a VNResponse-compatible value"
+    )
