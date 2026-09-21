@@ -130,6 +130,45 @@ class TurnJournal:
             history_before=self.history.count(),
         )
 
+    def latest_turn_id(self) -> Optional[str]:
+        ids = self._load_index()
+        return ids[-1] if ids else None
+
+    def amend_latest(
+        self,
+        preimages: List[FilePreimage],
+    ) -> None:
+        turn_id = self.latest_turn_id()
+        if turn_id is None or not preimages:
+            return
+
+        data = self._load_journal(turn_id)
+        if data is None:
+            return
+
+        existing = [
+            FilePreimage.from_dict(item)
+            for item in data.get("preimages", [])
+            if isinstance(item, dict)
+        ]
+        seen = {
+            (item.store, item.path)
+            for item in existing
+        }
+        for item in preimages:
+            key = (item.store, item.path)
+            if key not in seen:
+                existing.append(item)
+                seen.add(key)
+
+        data["preimages"] = [
+            item.to_dict() for item in existing
+        ]
+        self._write_json(
+            self._journal_path(turn_id),
+            data,
+        )
+
     def list_turns(self, limit: int = 50) -> List[Dict[str, Any]]:
         ids = self._load_index()
         if limit > 0:
