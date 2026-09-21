@@ -78,7 +78,7 @@ def write_datellm_style_distribution(root: Path):
         "GAME_NAME: datellm\n"
         "BUILD_VERSION: 1\n"
         "FORMAT_VERSION: 1\n"
-        "CONTENT_ROOT: datellm/distribution\n",
+        "CONTENT_ROOT: .\n",
         encoding="utf-8",
     )
     (root / "story").mkdir()
