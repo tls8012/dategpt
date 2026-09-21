@@ -59,6 +59,27 @@ class ControlRouter:
                 return ControlResponse(True, str(exc), self.state.snapshot())
             return self._ok("{} 설정을 변경했습니다.".format(name))
 
+        if message_type == "set_controls":
+            values = message.get("controls")
+            if not isinstance(values, Mapping):
+                return ControlResponse(
+                    True,
+                    "controls는 JSON object여야 합니다.",
+                    self.state.snapshot(),
+                )
+            try:
+                for name, value in values.items():
+                    self.state.set(str(name), value)
+                if self.on_change is not None:
+                    self.on_change(self.state.snapshot())
+            except ValueError as exc:
+                return ControlResponse(
+                    True,
+                    str(exc),
+                    self.state.snapshot(),
+                )
+            return self._ok("설정을 변경했습니다.")
+
         if message_type == "help":
             return self._ok(self.render_help())
 
