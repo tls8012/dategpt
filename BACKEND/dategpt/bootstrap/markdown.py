@@ -46,7 +46,11 @@ def parse_markdown_fields(text: str) -> Dict[str, str]:
             continue
 
         payload = line
-        if payload.startswith("- "):
+        if (
+            len(payload) >= 2
+            and payload[0] in {"-", "*", "+"}
+            and payload[1].isspace()
+        ):
             payload = payload[2:].strip()
 
         if (
