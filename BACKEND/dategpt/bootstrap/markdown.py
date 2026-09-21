@@ -6,18 +6,18 @@ from typing import Dict
 
 def _normalize_field_key(value: str) -> str:
     key = unicodedata.normalize("NFC", str(value))
-    key = key.replace("\\ufeff", "")
-    key = key.replace("\\u200b", "")
-    key = key.replace("\\u200c", "")
-    key = key.replace("\\u200d", "")
-    key = key.replace("\\u2060", "")
+    key = key.replace("\ufeff", "")
+    key = key.replace("\u200b", "")
+    key = key.replace("\u200c", "")
+    key = key.replace("\u200d", "")
+    key = key.replace("\u2060", "")
     key = key.strip()
 
     for token in (
         "_", "-", ".", ":", "*", "`",
         "[", "]", "(", ")", "#", "+",
     ):
-        key = key.replace("\\\\" + token, token)
+        key = key.replace("\\" + token, token)
 
     return key
 
