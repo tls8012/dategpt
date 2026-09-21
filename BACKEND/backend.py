@@ -28,7 +28,21 @@ app = BackendApplication(
 )
 
 
+def debug(message):
+    print(
+        "[protocol] {}".format(message),
+        file=sys.stderr,
+        flush=True,
+    )
+
+
 def send(data):
+    debug(
+        "OUT type={} request_id={}".format(
+            data.get("type"),
+            data.get("request_id"),
+        )
+    )
     print(
         json.dumps(
             data,
@@ -40,6 +54,12 @@ def send(data):
 
 def handle(msg):
     msg_type = msg.get("type")
+    debug(
+        "IN type={} request_id={}".format(
+            msg_type,
+            msg.get("request_id"),
+        )
+    )
 
     if msg_type == "shutdown":
         request_id = msg.get("request_id")
@@ -59,6 +79,12 @@ def handle(msg):
 
 
 def main():
+    debug(
+        "READY backend_dir={}".format(
+            BACKEND_DIR
+        )
+    )
+
     for line in sys.stdin:
         line = line.strip()
 
@@ -84,13 +110,11 @@ def main():
                 "recoverable": True,
             })
         except Exception as exc:
-            print(
+            debug(
                 "{}: {}".format(
                     type(exc).__name__,
                     exc,
-                ),
-                file=sys.stderr,
-                flush=True,
+                )
             )
             send({
                 "type": "error",
