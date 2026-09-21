@@ -1,0 +1,71 @@
+QMainWindow, QWidget {
+    background: #14161a;
+    color: #f2f2f2;
+    font-size: 15px;
+}
+
+QFrame#Card, QFrame#DialogueCard {
+    background: #20242b;
+    border: 1px solid #343a44;
+    border-radius: 10px;
+}
+
+QFrame#Stage {
+    background: #101216;
+    border: 1px solid #2b3038;
+    border-radius: 8px;
+}
+
+QLabel#Title {
+    font-size: 32px;
+    font-weight: 700;
+}
+
+QLabel#Speaker {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+QLabel#Muted, QLabel#Status {
+    color: #aab1bd;
+}
+
+QPushButton {
+    background: #303640;
+    border: 1px solid #49515f;
+    border-radius: 7px;
+    padding: 8px 14px;
+}
+
+QPushButton:hover {
+    background: #3a424f;
+}
+
+QPushButton:disabled {
+    color: #707782;
+    background: #252a31;
+    border-color: #303640;
+}
+
+QPushButton#Primary {
+    background: #44617e;
+    border-color: #5d7da0;
+}
+
+QLineEdit, QComboBox, QPlainTextEdit, QTextEdit {
+    background: #191c21;
+    color: #f2f2f2;
+    border: 1px solid #3b424d;
+    border-radius: 6px;
+    padding: 7px;
+    selection-background-color: #4f6983;
+}
+
+QMenuBar, QMenu, QStatusBar {
+    background: #191c21;
+    color: #f2f2f2;
+}
+
+QDockWidget {
+    color: #f2f2f2;
+}
