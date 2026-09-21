@@ -73,11 +73,31 @@ class AgentTests(unittest.TestCase):
             )
             self.assertEqual(hidden[0]["path"], "hidden/secret.md")
 
-            fs.save_write("entities/yuna.md", "관계 변화")
-            self.assertEqual(
-                fs.save_read("entities/yuna.md"),
-                "관계 변화",
+            fallback = fs.save_read("entities/yuna.md")
+            self.assertIn(
+                "## SOURCE: entities/yuna.md",
+                fallback,
             )
+            self.assertIn(
+                "붉은 머리 기사 유나",
+                fallback,
+            )
+
+            fs.save_write("entities/yuna.md", "관계 변화")
+            layered = fs.save_read("entities/yuna.md")
+            self.assertIn(
+                "## SOURCE: entities/yuna.md",
+                layered,
+            )
+            self.assertIn(
+                "붉은 머리 기사 유나",
+                layered,
+            )
+            self.assertIn(
+                "## SAVE OVERLAY: entities/yuna.md",
+                layered,
+            )
+            self.assertIn("관계 변화", layered)
 
             fs.scratchpad_write("current.md", "다음 장면 준비")
             self.assertEqual(
