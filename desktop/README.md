@@ -15,26 +15,30 @@ dock.
 
 ## Run
 
-Create a desktop environment and install PySide6:
+Use one repository-level virtual environment for both the desktop UI and the
+DateGPT backend.
+
+macOS / Linux:
 
 ```bash
-python3 -m venv .venv-desktop
-source .venv-desktop/bin/activate
-pip install -r desktop/requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 python desktop/main.py
 ```
 
-By default the frontend looks for `BACKEND/backend.py`. For the backend Python
-interpreter it prefers the existing `BACKEND/datevenv` and falls back to the
-interpreter that launched the desktop UI.
+Windows PowerShell:
 
-You can override that:
-
-```bash
-python desktop/main.py --backend-python /path/to/backend/python
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python desktop\main.py
 ```
 
-or set `DATEGPT_BACKEND_PYTHON`.
+The frontend launches `BACKEND/backend.py` with the exact same
+`sys.executable` that is running the PySide application. There is no second
+backend virtual environment.
 
 ## Implemented in this prototype
 
@@ -48,10 +52,10 @@ or set `DATEGPT_BACKEND_PYTHON`.
 - semantic checkpoint button
 - toggleable backend debug dock
 - QProcess signal-based backend transport
+- sparse turn journal with rollback/edit/regenerate
 
 Not implemented yet:
 
-- turn rollback/edit/regenerate
 - structured speaker/narration output
 - 2-3 line dialogue paging/streaming
 - cartridge asset rendering
