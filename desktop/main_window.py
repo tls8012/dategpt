@@ -1167,6 +1167,12 @@ class MainWindow(QMainWindow):
         self.game.send_requested.connect(
             self.send_player_text
         )
+        self.game.continue_requested.connect(
+            self.continue_gameplay
+        )
+        self.game.help_requested.connect(
+            self.show_help
+        )
         self.game.settings_requested.connect(
             self.open_settings
         )
@@ -1197,6 +1203,9 @@ class MainWindow(QMainWindow):
         )
         self.settings_dialog.api_key_clear_requested.connect(
             self.clear_api_key
+        )
+        self.settings_dialog.controls_requested.connect(
+            self.set_controls
         )
 
         self.turn_history_dialog.refresh_requested.connect(
@@ -1331,6 +1340,7 @@ class MainWindow(QMainWindow):
         self.settings_dialog.raise_()
         self.settings_dialog.activateWindow()
         self.refresh_model_settings()
+        self.refresh_controls()
 
     def refresh_model_settings(self) -> None:
         self.settings_dialog.set_status(
@@ -1386,6 +1396,46 @@ class MainWindow(QMainWindow):
             },
             "settings_write",
         )
+
+    def refresh_controls(self) -> None:
+        self._send(
+            {"type": "get_controls"},
+            "controls_get",
+        )
+
+    def set_controls(
+        self,
+        controls: Dict[str, Any],
+    ) -> None:
+        self.settings_dialog.set_status(
+            "게임 설정 저장 중..."
+        )
+        self._send(
+            {
+                "type": "set_controls",
+                "controls": dict(controls),
+            },
+            "controls_write",
+        )
+
+    def show_help(self) -> None:
+        if not self.active_session:
+            return
+        self._send(
+            {"type": "help"},
+            "help",
+        )
+
+    def continue_gameplay(self) -> None:
+        if (
+            not self.active_session
+            or self.active_session.get(
+                "needs_setup",
+                False,
+            )
+        ):
+            return
+        self.send_player_text("계속")
 
     def send_player_text(self, text: str) -> None:
         if not self.active_session:
@@ -1594,6 +1644,12 @@ class MainWindow(QMainWindow):
         if event_type == "session_opened":
             self.active_session = dict(event)
             self.game.set_session(event)
+            self.settings_dialog.apply_controls(
+                event.get("controls", {})
+            )
+            self.turn_history_dialog.set_turns(
+                event.get("turns", [])
+            )
             self.stack.setCurrentWidget(self.game)
             self.game.set_waiting(False)
             self._finish_request(request_id)
@@ -1611,10 +1667,14 @@ class MainWindow(QMainWindow):
                     "onboarding_start",
                 )
             else:
-                self.game.show_reply(
-                    "기존 게임을 이어갑니다.",
-                    speaker="System",
+                restored = self.game.restore_history(
+                    event.get("recent_history", [])
                 )
+                if not restored:
+                    self.game.show_reply(
+                        "기존 게임을 이어갑니다.",
+                        speaker="System",
+                    )
                 self.game.set_status("")
             return
 
@@ -1644,6 +1704,29 @@ class MainWindow(QMainWindow):
             return
 
         if event_type == "control_state":
+            controls = event.get("controls", {})
+            if isinstance(controls, dict):
+                self.settings_dialog.apply_controls(
+                    controls
+                )
+                if self.active_session:
+                    self.active_session["controls"] = (
+                        dict(controls)
+                    )
+            return
+
+        if event_type == "presentation_start":
+            self.game.begin_presentation()
+            return
+
+        if event_type == "presentation_segment":
+            segment = event.get("segment", {})
+            if isinstance(segment, dict):
+                self.game.append_segment(segment)
+            return
+
+        if event_type == "presentation_end":
+            self.game.end_presentation()
             return
 
         if event_type == "checkpoint_complete":
@@ -1693,9 +1776,10 @@ class MainWindow(QMainWindow):
                 )
             )
             self.game.set_waiting(False)
-            self.game.show_reply(
-                str(event.get("text", ""))
-            )
+            if not event.get("segments"):
+                self.game.show_reply(
+                    str(event.get("text", ""))
+                )
             self.game.set_status("")
             self._finish_request(request_id)
             return
@@ -1707,13 +1791,21 @@ class MainWindow(QMainWindow):
                 self.refresh_model_settings()
             elif kind == "settings_get":
                 self.settings_dialog.set_status(text)
+            elif kind in {"controls_get", "controls_write"}:
+                self.settings_dialog.set_status(text)
+            elif kind == "help":
+                self.game.show_reply(
+                    text,
+                    speaker="System",
+                )
             elif kind in {
                 "play",
                 "onboarding_start",
                 "onboarding_turn",
                 "onboarding_mode",
             }:
-                self.game.show_reply(text)
+                if not event.get("segments"):
+                    self.game.show_reply(text)
                 onboarding = event.get("onboarding")
                 if isinstance(onboarding, dict):
                     self.game.set_onboarding_state(
@@ -1738,7 +1830,12 @@ class MainWindow(QMainWindow):
             code = str(event.get("code", "ERROR"))
             rendered = "{}: {}".format(code, message)
 
-            if kind in {"settings_get", "settings_write"}:
+            if kind in {
+                "settings_get",
+                "settings_write",
+                "controls_get",
+                "controls_write",
+            }:
                 self.settings_dialog.set_status(
                     rendered
                 )
