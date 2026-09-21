@@ -187,9 +187,18 @@ label dategpt_open_session:
             "세션 선택 오류: [backend_error!q]"
             jump dategpt_shutdown
 
+    $ session_game_name = backend_session.get(
+        "game_name",
+        "",
+    )
+    $ session_game_id = backend_session.get(
+        "game_id",
+        "",
+    )
+
     "세션이 열렸다."
-    "GAME: [backend_session.get('game_name', '')!q]"
-    "GAME_ID: [backend_session.get('game_id', '')!q]"
+    "GAME: [session_game_name!q]"
+    "GAME_ID: [session_game_id!q]"
 
     if backend_session.get("needs_setup", False):
         "새 게임 온보딩 상태다."
