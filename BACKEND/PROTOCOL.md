@@ -194,3 +194,17 @@ through GitHub Actions. DateGPT resolves prompts in this order:
 
 The managed DateGPT copy currently contains only `runtime.md` and
 `onboarding.md`.
+
+
+## DateGPT host adapter
+
+DateGPT consumes the upstream scaffolding and cartridge formats without
+rewriting their contracts. The located Distribution directory is mounted
+directly as the read-only ScenarioPack; `CONTENT_ROOT` remains cartridge
+metadata.
+
+DateGPT does not create or depend on `game_source.md`, because the installed
+cartridge and active ScenarioPack already identify the content source. Existing
+runtime pointers keep the upstream bare relative form such as
+`entities/main_character.md` and `story/전학 첫날.md`. Paths containing
+spaces are supported.
