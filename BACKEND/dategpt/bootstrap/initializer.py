@@ -9,7 +9,7 @@ from ..controls import ControlState
 from ..fs import RootedTextStore, safe_path_segment
 from ..scenarios import ScenarioPack
 from ..workspace import SessionWorkspace
-from .models import GameSource, InitComplete, ScenarioManifest
+from .models import InitComplete, ScenarioManifest
 
 
 _SAVE_DIRS: Tuple[str, ...] = (
@@ -35,17 +35,12 @@ class UnknownGameInstance(FileNotFoundError):
     pass
 
 
-class ScenarioSourceConflict(RuntimeError):
-    pass
-
-
 @dataclass
 class InitializationResult:
     """Deterministic result of the original init.md bootstrap contract."""
 
     is_new: bool
     manifest: ScenarioManifest
-    source: GameSource
     workspace: SessionWorkspace
     controls: ControlState
     init_complete: Optional[InitComplete]
@@ -71,7 +66,7 @@ class SessionInitializer:
 
     This class intentionally hard-codes the stable save directory contract.
     It does not ask an LLM to discover folders, select a single unambiguous
-    GAME_ID, register game_source.md, restore controls, or load known indexes.
+    GAME_ID, restore controls, or load known indexes.
     """
 
     def __init__(self, *, save_base: Path, runtime_base: Path) -> None:
@@ -85,8 +80,6 @@ class SessionInitializer:
         self,
         scenario: ScenarioPack,
         *,
-        distribution_url: str = "",
-        manifest_url: str = "",
         requested_game_id: Optional[str] = None,
         new_game: bool = False,
     ) -> InitializationResult:
@@ -94,14 +87,6 @@ class SessionInitializer:
             scenario.read_text("file-manifest.md")
         )
         game_name = safe_path_segment(manifest.game_name, "GAME_NAME")
-
-        incoming_source = GameSource(
-            game_name=game_name,
-            distribution_url=distribution_url,
-            manifest_url=manifest_url,
-            content_root=manifest.content_root,
-        )
-        source = self._register_or_restore_source(incoming_source)
 
         existing_ids = self._list_instance_ids(game_name)
         game_id, is_new = self._select_instance(
@@ -135,7 +120,6 @@ class SessionInitializer:
         return InitializationResult(
             is_new=is_new,
             manifest=manifest,
-            source=source,
             workspace=workspace,
             controls=controls,
             init_complete=init_complete,
@@ -191,25 +175,6 @@ class SessionInitializer:
         result.init_complete = init_complete
         result.controls = state
         return init_complete
-
-    def _register_or_restore_source(self, incoming: GameSource) -> GameSource:
-        relative = "{}/game_source.md".format(incoming.game_name)
-        if not self.registry.exists(relative):
-            self.registry.write_text(relative, incoming.render())
-            return incoming
-
-        existing = GameSource.parse(self.registry.read_text(relative))
-        if existing.game_name != incoming.game_name:
-            raise ScenarioSourceConflict("GAME_NAME does not match game_source.md")
-
-        for name in ("distribution_url", "manifest_url", "content_root"):
-            old = getattr(existing, name)
-            new = getattr(incoming, name)
-            if old and new and old != new:
-                raise ScenarioSourceConflict(
-                    "{} differs from registered game source".format(name)
-                )
-        return existing
 
     def _list_instance_ids(self, game_name: str):
         game_root = self.registry.resolve(game_name)

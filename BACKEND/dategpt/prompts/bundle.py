@@ -9,6 +9,14 @@ from typing import Any, Dict, Mapping, Tuple
 from ..fs import RootedTextStore
 
 
+DATEGPT_RUNTIME_ADAPTER = """# DATEGPT HOST ADAPTER
+DateGPT already mounts the selected Distribution as a local read-only ScenarioPack.
+Do not look for or recreate games/GAME_NAME/game_source.md.
+Do not use .scaffolding paths through gameplay file tools; runtime/onboarding policy is already injected.
+Scenario/content tool paths are relative to the mounted Distribution root, and Save tool paths are relative to the current GAME_ID Save root.
+"""
+
+
 @dataclass(frozen=True)
 class PromptSnapshot:
     """Immutable prompt material for one agent invocation."""
@@ -70,7 +78,10 @@ class PromptBundle:
         mode_prompt: str = "",
         mode_prompt_name: str = "",
     ) -> PromptSnapshot:
-        parts = [self.read_runtime().rstrip()]
+        parts = [
+            self.read_runtime().rstrip(),
+            DATEGPT_RUNTIME_ADAPTER.rstrip(),
+        ]
         source_files = [self.runtime_name]
 
         if stable_context:

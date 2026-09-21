@@ -11,7 +11,9 @@ from ..workspace import SessionWorkspace
 
 
 _POINTER_RE = re.compile(
-    r"(?:(?:entities|story|flags|assets)/[^\s,;|\]\)]+)"
+    r"(?:(?:entities|story|flags|assets)/"
+    r"[^\n,;|\]\)]+?\.(?:md|json|txt))",
+    re.IGNORECASE,
 )
 _ENTITY_SPLIT_RE = re.compile(r"[,;|\n、]+")
 
