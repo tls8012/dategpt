@@ -792,7 +792,7 @@ class MainWindow(QMainWindow):
         )
         self._send(
             {"type": "get_model_settings"},
-            "settings",
+            "settings_get",
         )
 
     def set_model(
@@ -809,7 +809,7 @@ class MainWindow(QMainWindow):
                 "provider": provider,
                 "model": model,
             },
-            "settings",
+            "settings_write",
         )
 
     def set_api_key(
@@ -826,7 +826,7 @@ class MainWindow(QMainWindow):
                 "provider": provider,
                 "api_key": api_key,
             },
-            "settings",
+            "settings_write",
         )
 
     def clear_api_key(self, provider: str) -> None:
@@ -838,7 +838,7 @@ class MainWindow(QMainWindow):
                 "type": "clear_api_key",
                 "provider": provider,
             },
-            "settings",
+            "settings_write",
         )
 
     def send_player_text(self, text: str) -> None:
@@ -1038,9 +1038,11 @@ class MainWindow(QMainWindow):
 
         if event_type == "reply":
             text = str(event.get("text", ""))
-            if kind == "settings":
+            if kind == "settings_write":
                 self.settings_dialog.set_status(text)
                 self.refresh_model_settings()
+            elif kind == "settings_get":
+                self.settings_dialog.set_status(text)
             elif kind in {
                 "play",
                 "onboarding_start",
@@ -1067,7 +1069,7 @@ class MainWindow(QMainWindow):
             code = str(event.get("code", "ERROR"))
             rendered = "{}: {}".format(code, message)
 
-            if kind == "settings":
+            if kind in {"settings_get", "settings_write"}:
                 self.settings_dialog.set_status(
                     rendered
                 )
