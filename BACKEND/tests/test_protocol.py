@@ -396,6 +396,37 @@ class ProtocolTests(unittest.TestCase):
                 "entities/existing.md",
             )
 
+    def test_list_game_instances_does_not_create_a_save(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app = self.make_app(base)
+
+            empty = app.handle({
+                "type": "list_game_instances",
+                "request_id": "list-1",
+                "game_name": "protocol-test",
+            })
+            self.assertEqual(
+                empty[0]["type"],
+                "game_instance_list",
+            )
+            self.assertEqual(empty[0]["game_ids"], [])
+
+            game_root = app.save_base / "protocol-test"
+            game_root.mkdir(parents=True)
+            (game_root / "save-a").mkdir()
+            (game_root / "save-b").mkdir()
+
+            listed = app.handle({
+                "type": "list_game_instances",
+                "request_id": "list-2",
+                "game_name": "protocol-test",
+            })
+            self.assertEqual(
+                listed[0]["game_ids"],
+                ["save-a", "save-b"],
+            )
+
     def test_open_session_replaces_previous_active_session(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
