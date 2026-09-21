@@ -163,6 +163,11 @@ An installed cartridge can then be mounted without a direct scenario path:
 When build_version is omitted, the newest installed build is chosen
 deterministically. `list_cartridges` reports installed builds.
 
+`list_game_instances` accepts a `game_name` and returns a
+`game_instance_list` event with existing GAME_ID values. It is read-only and
+does not create or open a save. The desktop launcher uses it to keep New Game
+and Continue as separate actions.
+
 Direct `scenario_path` mount remains available for development.
 
 
