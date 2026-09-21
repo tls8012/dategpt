@@ -7,6 +7,7 @@ from typing import Any, Dict
 
 from ..fs import safe_path_segment
 from .stores import HistoryStore, SaveStore, ScratchpadStore
+from .turns import TurnJournal
 
 
 @dataclass
@@ -18,6 +19,7 @@ class SessionWorkspace:
     save: SaveStore
     scratchpad: ScratchpadStore
     history: HistoryStore
+    turns: TurnJournal
     runtime_root: Path
 
     @classmethod
@@ -40,12 +42,27 @@ class SessionWorkspace:
         )
         runtime_root.mkdir(parents=True, exist_ok=True)
 
+        save = SaveStore(save_root)
+        scratchpad = ScratchpadStore(
+            runtime_root / "scratchpad"
+        )
+        history = HistoryStore(
+            runtime_root / "history.jsonl"
+        )
+        turns = TurnJournal(
+            root=runtime_root / "turns",
+            save_store=save,
+            scratchpad_store=scratchpad,
+            history=history,
+        )
+
         return cls(
             game_name=safe_game_name,
             game_id=safe_game_id,
-            save=SaveStore(save_root),
-            scratchpad=ScratchpadStore(runtime_root / "scratchpad"),
-            history=HistoryStore(runtime_root / "history.jsonl"),
+            save=save,
+            scratchpad=scratchpad,
+            history=history,
+            turns=turns,
             runtime_root=runtime_root,
         )
 
