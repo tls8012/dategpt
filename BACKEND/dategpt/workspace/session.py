@@ -5,15 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict
 
+from ..fs import safe_path_segment
 from .stores import HistoryStore, SaveStore, ScratchpadStore
-
-
-def _safe_segment(value: str, label: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError("{} must be a non-empty string".format(label))
-    if value in {".", ".."} or "/" in value or "\\" in value or "\x00" in value:
-        raise ValueError("{} contains an unsafe path segment".format(label))
-    return value
 
 
 @dataclass
@@ -36,15 +29,10 @@ class SessionWorkspace:
         game_name: str,
         game_id: str,
     ) -> "SessionWorkspace":
-        safe_game_name = _safe_segment(game_name, "game_name")
-        safe_game_id = _safe_segment(game_id, "game_id")
+        safe_game_name = safe_path_segment(game_name, "game_name")
+        safe_game_id = safe_path_segment(game_id, "game_id")
 
-        # Save path intentionally matches the original:
-        # games/GAME_NAME/GAME_ID/<init완료.md, entities/, story/, ...>
         save_root = Path(save_base).expanduser().resolve() / safe_game_name / safe_game_id
-
-        # DateGPT implementation details live elsewhere and may be discarded
-        # without invalidating the semantic Save.
         runtime_root = (
             Path(runtime_base).expanduser().resolve()
             / safe_game_name
@@ -64,6 +52,9 @@ class SessionWorkspace:
     @property
     def controls_path(self) -> Path:
         return self.runtime_root / "controls.json"
+
+    def has_runtime_controls(self) -> bool:
+        return self.controls_path.exists()
 
     def load_controls(self) -> Dict[str, Any]:
         if not self.controls_path.exists():

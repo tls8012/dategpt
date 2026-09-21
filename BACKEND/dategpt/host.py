@@ -23,12 +23,7 @@ class TurnContext:
 
 
 class RuntimeHost:
-    """Composition root for one mounted scenario/session.
-
-    LangChain is intentionally not imported here. A future AgentRunner can take
-    TurnContext plus the mounted scenario/workspace tools. This keeps state and
-    file compatibility independent from the chosen agent framework.
-    """
+    """Composition root for one mounted scenario/session."""
 
     def __init__(
         self,
@@ -68,7 +63,6 @@ class RuntimeHost:
         self,
         user_input: str,
         *,
-        include_init: bool = False,
         history_limit: int = 20,
     ) -> TurnContext:
         if self.prompt_bundle is None:
@@ -76,7 +70,6 @@ class RuntimeHost:
 
         snapshot: PromptSnapshot = self.prompt_bundle.snapshot(
             controls=self.controls.snapshot(),
-            include_init=include_init,
         )
 
         scratchpad = {}

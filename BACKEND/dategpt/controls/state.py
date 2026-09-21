@@ -7,6 +7,17 @@ from typing import Any, Dict, Mapping
 _LEVELS = {"low", "medium", "high"}
 
 
+def _as_bool(value: Any, name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().casefold()
+    if normalized in {"true", "1", "yes", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "off"}:
+        return False
+    raise ValueError("{} must be boolean".format(name))
+
+
 @dataclass
 class ControlState:
     """Small engine-owned controls repeated in every LLM turn context."""
@@ -14,6 +25,7 @@ class ControlState:
     language: str = "한국어"
     initiative: str = "medium"
     world_consistency: str = "medium"
+    dev_commands: bool = False
     paused: bool = False
     extra: Dict[str, Any] = field(default_factory=dict)
 
@@ -39,22 +51,10 @@ class ControlState:
             setattr(self, name, level)
             return
 
-        if name == "paused":
-            if isinstance(value, bool):
-                self.paused = value
-                return
-            normalized = str(value).strip().casefold()
-            if normalized in {"true", "1", "yes", "on"}:
-                self.paused = True
-                return
-            if normalized in {"false", "0", "no", "off"}:
-                self.paused = False
-                return
-            raise ValueError("paused must be boolean")
+        if name in {"paused", "dev_commands"}:
+            setattr(self, name, _as_bool(value, name))
+            return
 
-        # Future prompt bundles may introduce controls without forcing an
-        # engine release. The structured control API can carry them immediately
-        # and the snapshot will expose them to the LLM every turn.
         self.extra[name] = value
 
     def snapshot(self) -> Dict[str, Any]:
@@ -62,6 +62,7 @@ class ControlState:
             "language": self.language,
             "initiative": self.initiative,
             "world_consistency": self.world_consistency,
+            "dev_commands": self.dev_commands,
             "paused": self.paused,
         }
         values.update(self.extra)

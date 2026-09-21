@@ -24,6 +24,16 @@ class ReadOnlyStore(PermissionError):
     """Raised when a write is attempted against a read-only store."""
 
 
+def safe_path_segment(value: str, label: str = "path segment") -> str:
+    """Validate one user/content supplied directory segment."""
+
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("{} must be a non-empty string".format(label))
+    if value in {".", ".."} or "/" in value or "\\" in value or "\x00" in value:
+        raise ValueError("{} contains an unsafe path segment".format(label))
+    return value
+
+
 class RootedTextStore:
     """Small, dependency-free text file store confined to one directory.
 
@@ -75,8 +85,6 @@ class RootedTextStore:
         path = self.resolve(relative_path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Replace atomically so an interrupted semantic save does not leave a
-        # half-written Markdown file behind.
         temp_path = path.with_name(path.name + ".tmp")
         temp_path.write_text(content, encoding="utf-8")
         os.replace(temp_path, path)
@@ -96,11 +104,7 @@ class RootedTextStore:
         limit: int = 20,
         max_file_bytes: int = 1_000_000,
     ) -> List[dict]:
-        """Simple lexical search intended as the first retrieval backend.
-
-        No vector database is assumed. The interface can later be backed by
-        SQLite FTS/BM25 without changing the agent-facing capability.
-        """
+        """Simple lexical search intended as the first retrieval backend."""
 
         terms = [term.casefold() for term in query.split() if term.strip()]
         if not terms:
