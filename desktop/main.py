@@ -20,12 +20,6 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Path to BACKEND/backend.py",
     )
-    parser.add_argument(
-        "--backend-python",
-        type=Path,
-        default=None,
-        help="Python executable used for backend.py",
-    )
     return parser.parse_args()
 
 
@@ -50,7 +44,6 @@ def main() -> int:
 
     client = BackendClient(
         backend_path,
-        python_path=args.backend_python,
     )
     window = MainWindow(client)
     app.aboutToQuit.connect(client.shutdown)
