@@ -240,17 +240,21 @@ class AgentRunner:
         *,
         prompt_fingerprint: str,
         phase: str,
+        segments: Tuple[Dict[str, str], ...] = (),
     ) -> None:
-        self.host.workspace.history.append(
-            {
-                "role": "assistant",
-                "text": text,
-                "prompt_fingerprint": (
-                    prompt_fingerprint
-                ),
-                "phase": phase,
-            }
-        )
+        record = {
+            "role": "assistant",
+            "text": text,
+            "prompt_fingerprint": (
+                prompt_fingerprint
+            ),
+            "phase": phase,
+        }
+        if segments:
+            record["segments"] = [
+                dict(item) for item in segments
+            ]
+        self.host.workspace.history.append(record)
 
     def _record_exchange(
         self,
