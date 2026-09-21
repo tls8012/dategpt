@@ -6,6 +6,21 @@ from typing import Any, Dict, Mapping
 
 _LEVELS = {"low", "medium", "high"}
 
+_RESERVED_EXTRA_NAMES = {
+    "game_name",
+    "game_id",
+    "game_source",
+    "play_mode",
+    "player_character_mode",
+    "main_character",
+    "location",
+    "time",
+    "scene",
+    "present_entities",
+    "active_story",
+    "relevant_flags",
+}
+
 
 def _as_bool(value: Any, name: str) -> bool:
     if isinstance(value, bool):
@@ -54,6 +69,13 @@ class ControlState:
         if name in {"paused", "dev_commands"}:
             setattr(self, name, _as_bool(value, name))
             return
+
+        if name in _RESERVED_EXTRA_NAMES:
+            raise ValueError(
+                "{} is reserved runtime state, not an extra control".format(
+                    name
+                )
+            )
 
         self.extra[name] = str(value).strip()
 
