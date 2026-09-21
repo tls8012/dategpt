@@ -197,5 +197,16 @@ class RuntimeHost:
         self,
         values: Dict[str, Any],
     ) -> None:
-        if self.workspace is not None:
-            self.workspace.save_controls(values)
+        if self.workspace is None:
+            return
+
+        self.workspace.save_controls(values)
+
+        if self.init_complete is not None:
+            self.init_complete.apply_control_values(
+                values
+            )
+            self.workspace.save.write_text(
+                "init완료.md",
+                self.init_complete.render(),
+            )
