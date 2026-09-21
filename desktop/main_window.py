@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
@@ -213,6 +214,7 @@ class GamePage(QWidget):
     send_requested = Signal(str)
     settings_requested = Signal()
     checkpoint_requested = Signal()
+    turns_requested = Signal()
     onboarding_mode_requested = Signal(str)
     onboarding_finalize_requested = Signal()
     launcher_requested = Signal()
@@ -232,9 +234,11 @@ class GamePage(QWidget):
         top.addStretch(1)
 
         self.save_button = QPushButton("저장")
+        self.turns_button = QPushButton("대화 기록")
         self.settings_button = QPushButton("설정")
         self.launcher_button = QPushButton("시나리오 선택")
         top.addWidget(self.save_button)
+        top.addWidget(self.turns_button)
         top.addWidget(self.settings_button)
         top.addWidget(self.launcher_button)
         root.addLayout(top)
@@ -316,6 +320,9 @@ class GamePage(QWidget):
         self.save_button.clicked.connect(
             self.checkpoint_requested.emit
         )
+        self.turns_button.clicked.connect(
+            self.turns_requested.emit
+        )
         self.launcher_button.clicked.connect(
             self.launcher_requested.emit
         )
@@ -354,6 +361,9 @@ class GamePage(QWidget):
         self.save_button.setEnabled(
             not self.needs_setup
         )
+        self.turns_button.setEnabled(
+            not self.needs_setup
+        )
         self.set_onboarding_state(
             event.get("onboarding", {})
         )
@@ -362,6 +372,7 @@ class GamePage(QWidget):
         self.needs_setup = False
         self.onboarding_frame.hide()
         self.save_button.setEnabled(True)
+        self.turns_button.setEnabled(True)
         self.set_status("온보딩 완료")
 
     def set_onboarding_state(
@@ -418,6 +429,190 @@ class GamePage(QWidget):
             return
         self.input_box.clear()
         self.send_requested.emit(text)
+
+
+class TurnHistoryDialog(QDialog):
+    refresh_requested = Signal()
+    rollback_requested = Signal(str)
+    edit_requested = Signal(str, str)
+    regenerate_requested = Signal(str)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("대화 기록")
+        self.resize(760, 520)
+        self._turns = []
+
+        root = QVBoxLayout(self)
+
+        hint = QLabel(
+            "턴을 수정하거나 다시 생성하면 그 턴 이후의 대화는 새 분기로 대체됩니다."
+        )
+        hint.setObjectName("Muted")
+        hint.setWordWrap(True)
+        root.addWidget(hint)
+
+        self.list_widget = QListWidget()
+        self.list_widget.currentRowChanged.connect(
+            self._show_selected
+        )
+        root.addWidget(self.list_widget, 1)
+
+        self.detail = QPlainTextEdit()
+        self.detail.setReadOnly(True)
+        self.detail.setMaximumHeight(150)
+        root.addWidget(self.detail)
+
+        buttons = QHBoxLayout()
+        self.refresh_button = QPushButton("새로고침")
+        self.rollback_button = QPushButton("이 턴부터 취소")
+        self.edit_button = QPushButton("수정")
+        self.regenerate_button = QPushButton("다시 생성")
+        self.close_button = QPushButton("닫기")
+
+        buttons.addWidget(self.refresh_button)
+        buttons.addStretch(1)
+        buttons.addWidget(self.rollback_button)
+        buttons.addWidget(self.edit_button)
+        buttons.addWidget(self.regenerate_button)
+        buttons.addWidget(self.close_button)
+        root.addLayout(buttons)
+
+        self.status_label = QLabel("")
+        self.status_label.setObjectName("Status")
+        root.addWidget(self.status_label)
+
+        self.refresh_button.clicked.connect(
+            self.refresh_requested.emit
+        )
+        self.rollback_button.clicked.connect(
+            self._rollback
+        )
+        self.edit_button.clicked.connect(
+            self._edit
+        )
+        self.regenerate_button.clicked.connect(
+            self._regenerate
+        )
+        self.close_button.clicked.connect(self.close)
+
+        self.set_turns([])
+
+    def set_turns(self, turns) -> None:
+        selected_id = None
+        current = self.current_turn()
+        if current is not None:
+            selected_id = current.get("turn_id")
+
+        self._turns = [
+            dict(item)
+            for item in turns
+            if isinstance(item, dict)
+        ]
+        self.list_widget.clear()
+
+        selected_row = -1
+        for index, turn in enumerate(self._turns):
+            user_text = str(
+                turn.get("user_text", "")
+            ).replace("\n", " ")
+            if len(user_text) > 70:
+                user_text = user_text[:67] + "..."
+            changed = int(
+                turn.get("changed_files", 0)
+            )
+            self.list_widget.addItem(
+                "{:02d}. {}  ·  변경 파일 {}".format(
+                    index + 1,
+                    user_text or "(빈 입력)",
+                    changed,
+                )
+            )
+            if turn.get("turn_id") == selected_id:
+                selected_row = index
+
+        if self._turns:
+            self.list_widget.setCurrentRow(
+                selected_row
+                if selected_row >= 0
+                else len(self._turns) - 1
+            )
+        else:
+            self.detail.setPlainText(
+                "아직 되돌릴 게임플레이 턴이 없습니다."
+            )
+
+        enabled = bool(self._turns)
+        self.rollback_button.setEnabled(enabled)
+        self.edit_button.setEnabled(enabled)
+        self.regenerate_button.setEnabled(enabled)
+
+    def current_turn(self) -> Optional[Dict[str, Any]]:
+        row = self.list_widget.currentRow()
+        if row < 0 or row >= len(self._turns):
+            return None
+        return self._turns[row]
+
+    def set_status(self, text: str) -> None:
+        self.status_label.setText(text)
+
+    def _show_selected(self, row: int) -> None:
+        if row < 0 or row >= len(self._turns):
+            return
+        turn = self._turns[row]
+        self.detail.setPlainText(
+            "나:\n{}\n\nDateGPT:\n{}".format(
+                turn.get("user_text", ""),
+                turn.get("assistant_text", ""),
+            )
+        )
+
+    def _rollback(self) -> None:
+        turn = self.current_turn()
+        if turn is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            "대화 취소",
+            "선택한 턴과 그 이후 대화를 취소할까요?",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.rollback_requested.emit(
+            str(turn.get("turn_id", ""))
+        )
+
+    def _edit(self) -> None:
+        turn = self.current_turn()
+        if turn is None:
+            return
+        text, ok = QInputDialog.getMultiLineText(
+            self,
+            "대화 수정",
+            "수정할 입력:",
+            str(turn.get("user_text", "")),
+        )
+        text = text.strip()
+        if ok and text:
+            self.edit_requested.emit(
+                str(turn.get("turn_id", "")),
+                text,
+            )
+
+    def _regenerate(self) -> None:
+        turn = self.current_turn()
+        if turn is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            "다시 생성",
+            "같은 사용자 입력으로 이 턴부터 다시 생성할까요?",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.regenerate_requested.emit(
+            str(turn.get("turn_id", ""))
+        )
 
 
 class SettingsDialog(QDialog):
@@ -582,6 +777,9 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.stack)
 
         self.settings_dialog = SettingsDialog(self)
+        self.turn_history_dialog = TurnHistoryDialog(
+            self
+        )
 
         self.debug_dock = QDockWidget(
             "Backend Debug",
@@ -643,6 +841,9 @@ class MainWindow(QMainWindow):
         self.game.checkpoint_requested.connect(
             self.checkpoint
         )
+        self.game.turns_requested.connect(
+            self.open_turn_history
+        )
         self.game.onboarding_mode_requested.connect(
             self.select_onboarding_mode
         )
@@ -664,6 +865,19 @@ class MainWindow(QMainWindow):
         )
         self.settings_dialog.api_key_clear_requested.connect(
             self.clear_api_key
+        )
+
+        self.turn_history_dialog.refresh_requested.connect(
+            self.refresh_turns
+        )
+        self.turn_history_dialog.rollback_requested.connect(
+            self.rollback_turn
+        )
+        self.turn_history_dialog.edit_requested.connect(
+            self.edit_turn
+        )
+        self.turn_history_dialog.regenerate_requested.connect(
+            self.regenerate_turn
         )
 
         self.client.event_received.connect(
@@ -914,6 +1128,78 @@ class MainWindow(QMainWindow):
             "checkpoint",
         )
 
+    def open_turn_history(self) -> None:
+        if not self.active_session:
+            return
+        self.turn_history_dialog.show()
+        self.turn_history_dialog.raise_()
+        self.turn_history_dialog.activateWindow()
+        self.refresh_turns()
+
+    def refresh_turns(self) -> None:
+        if not self.active_session:
+            return
+        self.turn_history_dialog.set_status(
+            "턴 기록을 읽는 중..."
+        )
+        self._send(
+            {"type": "list_turns"},
+            "turn_list",
+        )
+
+    def rollback_turn(self, turn_id: str) -> None:
+        self.game.set_waiting(
+            True,
+            "이전 상태로 되돌리는 중...",
+        )
+        self.turn_history_dialog.set_status(
+            "되돌리는 중..."
+        )
+        self._send(
+            {
+                "type": "rollback_turn",
+                "turn_id": turn_id,
+            },
+            "turn_rollback",
+        )
+
+    def edit_turn(
+        self,
+        turn_id: str,
+        text: str,
+    ) -> None:
+        self.game.set_waiting(
+            True,
+            "수정한 입력으로 다시 생성 중...",
+        )
+        self.turn_history_dialog.set_status(
+            "수정한 턴을 생성 중..."
+        )
+        self._send(
+            {
+                "type": "edit_turn",
+                "turn_id": turn_id,
+                "text": text,
+            },
+            "turn_edit",
+        )
+
+    def regenerate_turn(self, turn_id: str) -> None:
+        self.game.set_waiting(
+            True,
+            "같은 입력으로 다시 생성 중...",
+        )
+        self.turn_history_dialog.set_status(
+            "다시 생성 중..."
+        )
+        self._send(
+            {
+                "type": "regenerate_turn",
+                "turn_id": turn_id,
+            },
+            "turn_regenerate",
+        )
+
     def return_to_launcher(self) -> None:
         self.stack.setCurrentWidget(
             self.launcher
@@ -1033,6 +1319,52 @@ class MainWindow(QMainWindow):
             self.game.set_status(
                 str(event.get("text", "저장 완료"))
             )
+            self._finish_request(request_id)
+            return
+
+        if event_type == "turn_list":
+            self.turn_history_dialog.set_turns(
+                event.get("turns", [])
+            )
+            self.turn_history_dialog.set_status("")
+            self._finish_request(request_id)
+            return
+
+        if event_type == "turn_rolled_back":
+            self.turn_history_dialog.set_turns(
+                event.get("turns", [])
+            )
+            self.turn_history_dialog.set_status(
+                "선택한 턴 이후 대화를 취소했습니다."
+            )
+            self.game.set_waiting(False)
+            self.game.show_reply(
+                "선택한 턴 이전 상태로 되돌렸습니다.",
+                speaker="System",
+            )
+            self.game.set_status("")
+            self._finish_request(request_id)
+            return
+
+        if event_type in {
+            "turn_edited",
+            "turn_regenerated",
+        }:
+            self.turn_history_dialog.set_turns(
+                event.get("turns", [])
+            )
+            self.turn_history_dialog.set_status(
+                (
+                    "수정 완료"
+                    if event_type == "turn_edited"
+                    else "다시 생성 완료"
+                )
+            )
+            self.game.set_waiting(False)
+            self.game.show_reply(
+                str(event.get("text", ""))
+            )
+            self.game.set_status("")
             self._finish_request(request_id)
             return
 
