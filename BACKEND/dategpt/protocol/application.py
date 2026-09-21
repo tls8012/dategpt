@@ -527,6 +527,14 @@ class BackendApplication:
                 format_version=(
                     result.manifest.format_version
                 ),
+                recent_history=(
+                    result.workspace.history.tail(100)
+                ),
+                turns=(
+                    result.workspace.turns.list_turns()
+                    if not result.needs_setup
+                    else []
+                ),
             )
         ]
 
@@ -628,6 +636,13 @@ class BackendApplication:
                 result.prompt_fingerprint
             ),
             phase="onboarding",
+            segments=result.segments,
+        )
+
+        _emit_presentation(
+            emit,
+            request_id,
+            result.segments,
         )
 
         return [
@@ -635,6 +650,7 @@ class BackendApplication:
                 "reply",
                 request_id,
                 text=result.text,
+                segments=list(result.segments),
                 phase="onboarding",
                 onboarding=(
                     session.onboarding.public_state()
@@ -712,11 +728,18 @@ class BackendApplication:
             ),
         )
 
+        _emit_presentation(
+            emit,
+            request_id,
+            result.segments,
+        )
+
         return [
             _event(
                 "reply",
                 request_id,
                 text=result.text,
+                segments=list(result.segments),
                 phase="onboarding",
                 onboarding=(
                     session.onboarding.public_state()
@@ -788,11 +811,18 @@ class BackendApplication:
 
         result = session.runner.run_turn(text)
 
+        _emit_presentation(
+            emit,
+            request_id,
+            result.segments,
+        )
+
         return [
             _event(
                 "reply",
                 request_id,
                 text=result.text,
+                segments=list(result.segments),
             )
         ]
 
@@ -1021,6 +1051,12 @@ class BackendApplication:
             preserved_ids
         )
 
+        _emit_presentation(
+            emit,
+            request_id,
+            result.segments,
+        )
+
         return [
             _event(
                 (
@@ -1032,6 +1068,7 @@ class BackendApplication:
                 replaced_turn_id=turn_id,
                 user_text=replacement_text,
                 text=result.text,
+                segments=list(result.segments),
                 turns=(
                     session.workspace.turns.list_turns()
                 ),
@@ -1263,6 +1300,39 @@ def _message_or_env_path(
     return Path(
         value
     ).expanduser().resolve()
+
+
+def _emit_presentation(
+    emit: Optional[Callable[[dict], None]],
+    request_id,
+    segments,
+) -> None:
+    if emit is None or not segments:
+        return
+
+    emit(
+        _event(
+            "presentation_start",
+            request_id,
+            total=len(segments),
+        )
+    )
+    for index, segment in enumerate(segments):
+        emit(
+            _event(
+                "presentation_segment",
+                request_id,
+                index=index,
+                segment=dict(segment),
+            )
+        )
+    emit(
+        _event(
+            "presentation_end",
+            request_id,
+            total=len(segments),
+        )
+    )
 
 
 def _event(
