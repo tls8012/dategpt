@@ -308,6 +308,33 @@ class BackendApplication:
                     emit=emit,
                 )
 
+            if message_type == "list_turns":
+                return self._list_turns(
+                    request_id=request_id,
+                )
+
+            if message_type == "rollback_turn":
+                return self._rollback_turn(
+                    message,
+                    request_id=request_id,
+                )
+
+            if message_type == "edit_turn":
+                return self._replace_turn(
+                    message,
+                    request_id=request_id,
+                    emit=emit,
+                    regenerate=False,
+                )
+
+            if message_type == "regenerate_turn":
+                return self._replace_turn(
+                    message,
+                    request_id=request_id,
+                    emit=emit,
+                    regenerate=True,
+                )
+
             raise ProtocolError(
                 "PROTOCOL_ERROR",
                 "알 수 없는 message type: {}".format(
@@ -865,6 +892,149 @@ class BackendApplication:
                 "checkpoint_complete",
                 request_id,
                 text=result.text,
+            )
+        ]
+
+    def _list_turns(
+        self,
+        *,
+        request_id,
+    ) -> List[dict]:
+        session = self._require_session()
+        if session.needs_setup:
+            raise ProtocolError(
+                "SESSION_NEEDS_SETUP",
+                "온보딩 완료 후 게임플레이 턴을 조회할 수 있습니다.",
+            )
+        return [
+            _event(
+                "turn_list",
+                request_id,
+                turns=session.workspace.turns.list_turns(),
+            )
+        ]
+
+    def _rollback_turn(
+        self,
+        message: Mapping[str, Any],
+        *,
+        request_id,
+    ) -> List[dict]:
+        session = self._require_session()
+        if session.needs_setup:
+            raise ProtocolError(
+                "SESSION_NEEDS_SETUP",
+                "온보딩 완료 후 게임플레이 턴을 되돌릴 수 있습니다.",
+            )
+
+        turn_id = str(
+            message.get("turn_id", "")
+        ).strip() or None
+        result = session.workspace.turns.rollback(
+            turn_id
+        )
+
+        return [
+            _event(
+                "turn_rolled_back",
+                request_id,
+                rollback=result,
+                turns=(
+                    session.workspace.turns.list_turns()
+                ),
+            )
+        ]
+
+    def _replace_turn(
+        self,
+        message: Mapping[str, Any],
+        *,
+        request_id,
+        emit: Optional[Callable[[dict], None]],
+        regenerate: bool,
+    ) -> List[dict]:
+        session = self._require_session()
+        if session.needs_setup:
+            raise ProtocolError(
+                "SESSION_NEEDS_SETUP",
+                "온보딩 완료 후 게임플레이 턴을 수정할 수 있습니다.",
+            )
+
+        turn_id = str(
+            message.get("turn_id", "")
+        ).strip()
+        if not turn_id:
+            raise ProtocolError(
+                "INVALID_REQUEST",
+                "turn_id가 필요합니다.",
+            )
+
+        rollback = session.workspace.turns.rollback(
+            turn_id,
+            preserve=True,
+        )
+        preserved_ids = list(
+            rollback.get("rolled_back_turn_ids", [])
+        )
+
+        if regenerate:
+            replacement_text = str(
+                rollback.get("user_text", "")
+            )
+        else:
+            replacement_text = str(
+                message.get("text", "")
+            ).strip()
+            if not replacement_text:
+                session.workspace.turns.restore_preserved(
+                    preserved_ids
+                )
+                raise ProtocolError(
+                    "INVALID_REQUEST",
+                    "수정할 text가 비어 있습니다.",
+                )
+
+        if emit is not None:
+            emit(
+                _event(
+                    "status",
+                    request_id,
+                    message=(
+                        "이전 턴을 다시 생성 중..."
+                        if regenerate
+                        else "수정한 턴을 생성 중..."
+                    ),
+                )
+            )
+
+        try:
+            result = session.runner.run_turn(
+                replacement_text
+            )
+        except Exception:
+            session.workspace.turns.restore_preserved(
+                preserved_ids
+            )
+            raise
+
+        session.workspace.turns.discard_preserved(
+            preserved_ids
+        )
+
+        return [
+            _event(
+                (
+                    "turn_regenerated"
+                    if regenerate
+                    else "turn_edited"
+                ),
+                request_id,
+                replaced_turn_id=turn_id,
+                user_text=replacement_text,
+                text=result.text,
+                turns=(
+                    session.workspace.turns.list_turns()
+                ),
             )
         ]
 
