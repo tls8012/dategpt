@@ -115,6 +115,37 @@ same retrieval boundary.
 play (and the compatibility alias say) runs one normal AgentRunner turn.
 Current controls may be repeated on every request.
 
+Gameplay and onboarding LLM replies use a structured VN response schema. The
+validated response contains ordered `segments`; each segment is narration,
+dialogue, or system text. Dialogue segments carry the visible speaker name
+separately from the text.
+
+When an emitter is available, a completed structured response is projected onto
+the JSONL protocol as:
+
+```text
+presentation_start
+presentation_segment
+presentation_segment
+...
+presentation_end
+reply
+```
+
+Each `presentation_segment` is already a frontend display unit, normally one
+complete sentence. The final `reply` still includes both flattened `text`
+and `segments` for compatibility. This is sentence-event delivery after
+structured validation; it is not yet provider token-latency streaming.
+
+Restored `session_opened` events include recent conversation history and the
+current rollback turn list so a desktop frontend can reconstruct the visible
+state immediately.
+
+`get_controls`, `set_control`, and `set_controls` are deterministic engine
+operations and do not call the LLM. `set_controls` accepts a controls object
+and is used by the desktop settings panel for language, initiative, and
+world_consistency.
+
 checkpoint runs the runtime semantic save command without appending that
 maintenance instruction to ordinary conversation history.
 
