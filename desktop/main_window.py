@@ -212,6 +212,8 @@ class LauncherPage(QWidget):
 
 class GamePage(QWidget):
     send_requested = Signal(str)
+    continue_requested = Signal()
+    help_requested = Signal()
     settings_requested = Signal()
     checkpoint_requested = Signal()
     turns_requested = Signal()
@@ -222,10 +224,14 @@ class GamePage(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.needs_setup = False
+        self._waiting = False
+        self._segments = []
+        self._segment_index = -1
+        self._presentation_complete = True
 
         root = QVBoxLayout(self)
         root.setContentsMargins(22, 18, 22, 22)
-        root.setSpacing(12)
+        root.setSpacing(10)
 
         top = QHBoxLayout()
         self.session_label = QLabel("세션 없음")
@@ -233,10 +239,15 @@ class GamePage(QWidget):
         top.addWidget(self.session_label)
         top.addStretch(1)
 
+        self.help_button = QPushButton("도움말")
+        self.continue_button = QPushButton("계속하기")
+        self.continue_button.setObjectName("Primary")
         self.save_button = QPushButton("저장")
         self.turns_button = QPushButton("대화 기록")
         self.settings_button = QPushButton("설정")
         self.launcher_button = QPushButton("시나리오 선택")
+        top.addWidget(self.help_button)
+        top.addWidget(self.continue_button)
         top.addWidget(self.save_button)
         top.addWidget(self.turns_button)
         top.addWidget(self.settings_button)
@@ -246,33 +257,58 @@ class GamePage(QWidget):
         self.stage = QFrame()
         self.stage.setObjectName("Stage")
         stage_layout = QVBoxLayout(self.stage)
-        stage_layout.addStretch(1)
-        stage_hint = QLabel(
-            "캐릭터 / 배경 표시 영역\n"
-            "(이미지 파이프라인은 다음 단계에서 연결)"
+        stage_layout.setContentsMargins(22, 22, 22, 18)
+        stage_layout.setSpacing(12)
+
+        self.stage_hint = QLabel(
+            "배경 / 캐릭터 표시 영역"
         )
-        stage_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        stage_hint.setObjectName("Muted")
-        stage_layout.addWidget(stage_hint)
-        stage_layout.addStretch(1)
-        root.addWidget(self.stage, 1)
+        self.stage_hint.setObjectName("StageHint")
+        self.stage_hint.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+        stage_layout.addWidget(
+            self.stage_hint,
+            1,
+        )
 
-        dialogue = QFrame()
-        dialogue.setObjectName("DialogueCard")
-        dialogue_layout = QVBoxLayout(dialogue)
-        dialogue_layout.setContentsMargins(20, 14, 20, 14)
-        dialogue_layout.setSpacing(7)
+        self.dialogue = QFrame()
+        self.dialogue.setObjectName("DialogueCard")
+        dialogue_layout = QVBoxLayout(self.dialogue)
+        dialogue_layout.setContentsMargins(22, 15, 22, 13)
+        dialogue_layout.setSpacing(6)
 
-        self.speaker_label = QLabel("DateGPT")
+        self.speaker_label = QLabel("")
         self.speaker_label.setObjectName("Speaker")
         dialogue_layout.addWidget(self.speaker_label)
 
-        self.dialogue_text = QPlainTextEdit()
-        self.dialogue_text.setReadOnly(True)
-        self.dialogue_text.setMaximumHeight(135)
-        dialogue_layout.addWidget(self.dialogue_text)
+        self.dialogue_text = QLabel(
+            "Space로 다음 대사를 넘기고, Enter로 입력창을 엽니다."
+        )
+        self.dialogue_text.setObjectName("DialogueText")
+        self.dialogue_text.setWordWrap(True)
+        self.dialogue_text.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.dialogue_text.setMinimumHeight(62)
+        self.dialogue_text.setAlignment(
+            Qt.AlignmentFlag.AlignTop
+            | Qt.AlignmentFlag.AlignLeft
+        )
+        dialogue_layout.addWidget(
+            self.dialogue_text,
+            1,
+        )
 
-        root.addWidget(dialogue)
+        self.page_hint = QLabel("")
+        self.page_hint.setObjectName("PageHint")
+        self.page_hint.setAlignment(
+            Qt.AlignmentFlag.AlignRight
+        )
+        dialogue_layout.addWidget(self.page_hint)
+
+        stage_layout.addWidget(self.dialogue)
+        root.addWidget(self.stage, 1)
 
         self.onboarding_frame = QFrame()
         onboarding_layout = QHBoxLayout(
@@ -291,10 +327,14 @@ class GamePage(QWidget):
         root.addWidget(self.onboarding_frame)
         self.onboarding_frame.hide()
 
-        input_row = QHBoxLayout()
+        self.input_frame = QFrame()
+        self.input_frame.setObjectName("InputFrame")
+        input_row = QHBoxLayout(self.input_frame)
+        input_row.setContentsMargins(0, 0, 0, 0)
+
         self.input_box = QPlainTextEdit()
         self.input_box.setPlaceholderText(
-            "하고 싶은 말을 입력하세요.  Ctrl+Enter로 전송"
+            "하고 싶은 말을 입력하세요. Ctrl+Enter로 전송, Esc로 닫기"
         )
         self.input_box.setMaximumHeight(92)
         self.send_button = QPushButton("전송")
@@ -302,17 +342,19 @@ class GamePage(QWidget):
         self.send_button.setMinimumWidth(100)
         input_row.addWidget(self.input_box, 1)
         input_row.addWidget(self.send_button)
-        root.addLayout(input_row)
+        root.addWidget(self.input_frame)
+        self.input_frame.hide()
 
         self.status_label = QLabel("")
         self.status_label.setObjectName("Status")
         root.addWidget(self.status_label)
 
         self.send_button.clicked.connect(self._emit_input)
-        QShortcut(
-            QKeySequence("Ctrl+Return"),
-            self,
-            activated=self._emit_input,
+        self.help_button.clicked.connect(
+            self.help_requested.emit
+        )
+        self.continue_button.clicked.connect(
+            self.continue_requested.emit
         )
         self.settings_button.clicked.connect(
             self.settings_requested.emit
@@ -345,6 +387,33 @@ class GamePage(QWidget):
             self.onboarding_finalize_requested.emit
         )
 
+        self.send_shortcut = QShortcut(
+            QKeySequence("Ctrl+Return"),
+            self,
+            activated=self._emit_input,
+        )
+        self.space_shortcut = QShortcut(
+            QKeySequence("Space"),
+            self,
+            activated=self.advance_presentation,
+        )
+        self.enter_shortcut = QShortcut(
+            QKeySequence("Return"),
+            self,
+            activated=self.show_input,
+        )
+        self.keypad_enter_shortcut = QShortcut(
+            QKeySequence("Enter"),
+            self,
+            activated=self.show_input,
+        )
+        self.escape_shortcut = QShortcut(
+            QKeySequence("Escape"),
+            self,
+            activated=self.hide_input,
+        )
+        self._sync_input_shortcuts()
+
     def set_session(self, event: Dict[str, Any]) -> None:
         self.needs_setup = bool(
             event.get("needs_setup", False)
@@ -364,15 +433,20 @@ class GamePage(QWidget):
         self.turns_button.setEnabled(
             not self.needs_setup
         )
+        self.continue_button.setEnabled(
+            not self.needs_setup
+        )
         self.set_onboarding_state(
             event.get("onboarding", {})
         )
+        self.hide_input()
 
     def mark_setup_complete(self) -> None:
         self.needs_setup = False
         self.onboarding_frame.hide()
         self.save_button.setEnabled(True)
         self.turns_button.setEnabled(True)
+        self.continue_button.setEnabled(True)
         self.set_status("온보딩 완료")
 
     def set_onboarding_state(
@@ -395,39 +469,215 @@ class GamePage(QWidget):
             )
         )
 
+    def begin_presentation(self) -> None:
+        self._segments = []
+        self._segment_index = -1
+        self._presentation_complete = False
+        self.page_hint.setText("응답 수신 중…")
+
+    def append_segment(
+        self,
+        segment: Dict[str, Any],
+    ) -> None:
+        if not isinstance(segment, dict):
+            return
+        text = str(segment.get("text", "")).strip()
+        if not text:
+            return
+        item = {
+            "kind": str(
+                segment.get("kind", "narration")
+            ),
+            "speaker": str(
+                segment.get("speaker", "")
+            ).strip(),
+            "text": text,
+        }
+        self._segments.append(item)
+        if self._segment_index < 0:
+            self._segment_index = 0
+            self._render_current_segment()
+        else:
+            self._update_page_hint()
+
+    def end_presentation(self) -> None:
+        self._presentation_complete = True
+        self._update_page_hint()
+
+    def set_segments(self, segments) -> None:
+        self.begin_presentation()
+        for segment in segments or []:
+            self.append_segment(segment)
+        self.end_presentation()
+
+    def has_presentation(self) -> bool:
+        return bool(self._segments)
+
+    def restore_history(self, records) -> bool:
+        for record in reversed(list(records or [])):
+            if not isinstance(record, dict):
+                continue
+            if str(record.get("role", "")) != "assistant":
+                continue
+            segments = record.get("segments")
+            if isinstance(segments, list) and segments:
+                self.set_segments(segments)
+                return True
+
+            text = str(record.get("text", "")).strip()
+            if text:
+                self.show_reply(
+                    text,
+                    speaker="DateGPT",
+                )
+                return True
+        return False
+
+    def advance_presentation(self) -> None:
+        if self.input_frame.isVisible():
+            return
+        next_index = self._segment_index + 1
+        if 0 <= next_index < len(self._segments):
+            self._segment_index = next_index
+            self._render_current_segment()
+
     def show_reply(
         self,
         text: str,
         *,
         speaker: str = "DateGPT",
     ) -> None:
-        self.speaker_label.setText(speaker)
-        self.dialogue_text.setPlainText(text)
+        kind = (
+            "system"
+            if speaker.casefold() == "system"
+            else "dialogue"
+        )
+        self.set_segments(
+            [
+                {
+                    "kind": kind,
+                    "speaker": (
+                        speaker
+                        if kind == "dialogue"
+                        else ""
+                    ),
+                    "text": text,
+                }
+            ]
+        )
 
     def show_user_input(self, text: str) -> None:
         self.show_reply(text, speaker="나")
+
+    def show_input(self) -> None:
+        if self._waiting or self.input_frame.isVisible():
+            return
+        self.input_frame.show()
+        self.input_box.setFocus(
+            Qt.FocusReason.ShortcutFocusReason
+        )
+        self._sync_input_shortcuts()
+
+    def hide_input(self) -> None:
+        if self.input_frame.isVisible():
+            self.input_frame.hide()
+        self.setFocus(
+            Qt.FocusReason.OtherFocusReason
+        )
+        self._sync_input_shortcuts()
 
     def set_waiting(
         self,
         waiting: bool,
         status: str = "",
     ) -> None:
+        self._waiting = waiting
         self.send_button.setEnabled(not waiting)
         self.input_box.setEnabled(not waiting)
+        self.help_button.setEnabled(not waiting)
+        self.continue_button.setEnabled(
+            not waiting and not self.needs_setup
+        )
         self.original_button.setEnabled(not waiting)
         self.existing_button.setEnabled(not waiting)
         self.observer_button.setEnabled(not waiting)
+        if waiting:
+            self.hide_input()
         if waiting and status:
             self.set_status(status)
+        self._sync_input_shortcuts()
 
     def set_status(self, text: str) -> None:
         self.status_label.setText(text)
 
+    def _render_current_segment(self) -> None:
+        if not (
+            0 <= self._segment_index < len(self._segments)
+        ):
+            return
+        segment = self._segments[
+            self._segment_index
+        ]
+        speaker = segment.get("speaker", "")
+        kind = segment.get("kind", "narration")
+        self.speaker_label.setText(
+            speaker if kind == "dialogue" else ""
+        )
+        self.speaker_label.setVisible(
+            kind == "dialogue" and bool(speaker)
+        )
+        self.dialogue_text.setText(
+            segment.get("text", "")
+        )
+        self._update_page_hint()
+
+    def _update_page_hint(self) -> None:
+        if not self._segments:
+            self.page_hint.setText(
+                "Space: 다음 · Enter: 입력"
+            )
+            return
+
+        current = self._segment_index + 1
+        total = len(self._segments)
+        has_next = self._segment_index + 1 < total
+
+        if has_next:
+            suffix = "Space: 다음"
+        elif not self._presentation_complete:
+            suffix = "응답 수신 중…"
+        else:
+            suffix = "Enter: 입력"
+
+        self.page_hint.setText(
+            "{}/{} · {}".format(
+                current,
+                total,
+                suffix,
+            )
+        )
+
+    def _sync_input_shortcuts(self) -> None:
+        input_visible = self.input_frame.isVisible()
+        can_open = not input_visible and not self._waiting
+        self.enter_shortcut.setEnabled(can_open)
+        self.keypad_enter_shortcut.setEnabled(can_open)
+        self.space_shortcut.setEnabled(
+            not input_visible
+        )
+        self.send_shortcut.setEnabled(
+            input_visible and not self._waiting
+        )
+        self.escape_shortcut.setEnabled(input_visible)
+
     def _emit_input(self) -> None:
+        if self._waiting:
+            return
         text = self.input_box.toPlainText().strip()
         if not text:
             return
         self.input_box.clear()
+        self.hide_input()
         self.send_requested.emit(text)
 
 
