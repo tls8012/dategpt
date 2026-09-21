@@ -21,6 +21,10 @@ from ..models import (
     ModelSettingsRouter,
     ModelSettingsStore,
 )
+from ..onboarding import (
+    CharacterDraftMissing,
+    OnboardingController,
+)
 from ..prompts import PromptBundle
 from ..scenarios import ScenarioPack
 from .errors import ProtocolError
@@ -34,6 +38,7 @@ class ActiveSession:
     initialization: InitializationResult
     host: RuntimeHost
     runner: Any
+    onboarding: OnboardingController
 
     @property
     def workspace(self):
@@ -52,7 +57,9 @@ class BackendApplication:
         *,
         backend_dir: Path,
         model_settings_store: Optional[ModelSettingsStore] = None,
-        runner_factory: Optional[Callable[[RuntimeHost, Callable[[], Any]], Any]] = None,
+        runner_factory: Optional[
+            Callable[[RuntimeHost, Callable[[], Any]], Any]
+        ] = None,
     ) -> None:
         self.backend_dir = Path(backend_dir).expanduser().resolve()
 
@@ -82,8 +89,6 @@ class BackendApplication:
             self.model_settings_store
         )
 
-        # Commands entered before a game is opened still have deterministic
-        # defaults. Once a session is active, its own ControlRouter takes over.
         self.default_controls = ControlState()
         self.default_control_router = ControlRouter(
             self.default_controls
@@ -93,7 +98,9 @@ class BackendApplication:
             save_base=self.save_base,
             runtime_base=self.runtime_base,
         )
-        self.runner_factory = runner_factory or _default_runner_factory
+        self.runner_factory = (
+            runner_factory or _default_runner_factory
+        )
         self.active_session: Optional[ActiveSession] = None
 
     def handle(
@@ -103,7 +110,9 @@ class BackendApplication:
         emit: Optional[Callable[[dict], None]] = None,
     ) -> List[dict]:
         request_id = message.get("request_id")
-        message_type = str(message.get("type", "")).strip()
+        message_type = str(
+            message.get("type", "")
+        ).strip()
 
         try:
             if message_type == "ping":
@@ -127,6 +136,40 @@ class BackendApplication:
                     request_id=request_id,
                 )
 
+            if message_type == "onboarding_start":
+                return self._onboarding_start(
+                    request_id=request_id,
+                    emit=emit,
+                )
+
+            if message_type == "onboarding_select_mode":
+                return self._onboarding_select_mode(
+                    message,
+                    request_id=request_id,
+                )
+
+            if message_type == "onboarding_turn":
+                return self._onboarding_turn(
+                    message,
+                    request_id=request_id,
+                    emit=emit,
+                )
+
+            if message_type == "onboarding_finalize":
+                return self._onboarding_finalize(
+                    request_id=request_id,
+                )
+
+            if message_type == "get_onboarding_state":
+                session = self._require_session()
+                return [
+                    _event(
+                        "onboarding_state",
+                        request_id,
+                        state=session.onboarding.public_state(),
+                    )
+                ]
+
             if message_type == "close_session":
                 self.active_session = None
                 return [
@@ -143,8 +186,10 @@ class BackendApplication:
                     )
                 ]
 
-            model_response = self.model_router.try_handle_message(
-                message
+            model_response = (
+                self.model_router.try_handle_message(
+                    message
+                )
             )
             if model_response.handled:
                 events = []
@@ -166,8 +211,10 @@ class BackendApplication:
                 return events
 
             control_router = self._current_control_router()
-            control_response = control_router.try_handle_message(
-                message
+            control_response = (
+                control_router.try_handle_message(
+                    message
+                )
             )
             if control_response.handled:
                 events = []
@@ -188,9 +235,6 @@ class BackendApplication:
                 )
                 return events
 
-            # Current Ren'Py text input can continue to send "say"; it is a
-            # compatibility alias for "play". New protocol callers should use
-            # "play" explicitly.
             if message_type in {"play", "say"}:
                 return self._play(
                     message,
@@ -232,6 +276,13 @@ class BackendApplication:
             return [
                 ProtocolError(
                     "SCENARIO_SOURCE_CONFLICT",
+                    str(exc),
+                ).event(request_id)
+            ]
+        except CharacterDraftMissing as exc:
+            return [
+                ProtocolError(
+                    "CHARACTER_DRAFT_MISSING",
                     str(exc),
                 ).event(request_id)
             ]
@@ -300,7 +351,9 @@ class BackendApplication:
                 if message.get("game_id") is not None
                 else None
             ),
-            new_game=bool(message.get("new_game", False)),
+            new_game=bool(
+                message.get("new_game", False)
+            ),
         )
 
         host = RuntimeHost(
@@ -308,19 +361,25 @@ class BackendApplication:
             scenario=scenario,
             workspace=result.workspace,
             controls=result.controls,
+            init_complete=result.init_complete,
         )
         runner = self.runner_factory(
             host,
             self.model_factory.create,
         )
+        onboarding = OnboardingController(
+            initializer=self.initializer,
+            initialization=result,
+            host=host,
+            scenario=scenario,
+        )
 
-        # v1 intentionally hard-codes exactly one active session. A successful
-        # open atomically replaces the previous mounted game.
         self.active_session = ActiveSession(
             scenario=scenario,
             initialization=result,
             host=host,
             runner=runner,
+            onboarding=onboarding,
         )
 
         return [
@@ -332,7 +391,12 @@ class BackendApplication:
                 is_new=result.is_new,
                 needs_setup=result.needs_setup,
                 controls=result.controls.snapshot(),
-                has_welcome=result.welcome_text is not None,
+                has_welcome=(
+                    result.welcome_text is not None
+                ),
+                onboarding=(
+                    onboarding.public_state()
+                ),
             )
         ]
 
@@ -355,21 +419,32 @@ class BackendApplication:
             message.get("controls"),
         )
 
-        init_complete = self.initializer.finalize_new_game(
-            session.initialization,
-            play_mode=str(
-                message.get("play_mode", "")
-            ).strip(),
-            player_character_mode=str(
-                message.get("player_character_mode", "")
-            ).strip(),
-            main_character=str(
-                message.get("main_character", "")
-            ).strip(),
-            current=_string_mapping(
-                message.get("current", {})
-            ),
-            controls=session.host.controls,
+        init_complete = (
+            self.initializer.finalize_new_game(
+                session.initialization,
+                play_mode=str(
+                    message.get("play_mode", "")
+                ).strip(),
+                player_character_mode=str(
+                    message.get(
+                        "player_character_mode",
+                        "",
+                    )
+                ).strip(),
+                main_character=str(
+                    message.get(
+                        "main_character",
+                        "",
+                    )
+                ).strip(),
+                current=_string_mapping(
+                    message.get("current", {})
+                ),
+                controls=session.host.controls,
+            )
+        )
+        session.host.set_init_complete(
+            init_complete
         )
 
         return [
@@ -378,7 +453,164 @@ class BackendApplication:
                 request_id,
                 game_name=init_complete.game_name,
                 game_id=init_complete.game_id,
-                controls=session.host.controls.snapshot(),
+                controls=(
+                    session.host.controls.snapshot()
+                ),
+            )
+        ]
+
+    def _onboarding_start(
+        self,
+        *,
+        request_id,
+        emit: Optional[Callable[[dict], None]],
+    ) -> List[dict]:
+        session = self._require_setup_session()
+        self._require_onboarding_prompt(session)
+
+        session.onboarding.start()
+
+        if emit is not None:
+            emit(
+                _event(
+                    "status",
+                    request_id,
+                    message="새 플레이를 준비 중...",
+                )
+            )
+
+        result = session.runner.run_onboarding_turn(
+            "BEGIN_ONBOARDING",
+            welcome_text=(
+                session.initialization.welcome_text
+            ),
+            onboarding_state=(
+                session.onboarding.public_state()
+            ),
+            record_history=False,
+        )
+        session.runner.record_assistant_message(
+            result.text,
+            prompt_fingerprint=(
+                result.prompt_fingerprint
+            ),
+            phase="onboarding",
+        )
+
+        return [
+            _event(
+                "reply",
+                request_id,
+                text=result.text,
+                phase="onboarding",
+                onboarding=(
+                    session.onboarding.public_state()
+                ),
+            )
+        ]
+
+    def _onboarding_select_mode(
+        self,
+        message: Mapping[str, Any],
+        *,
+        request_id,
+    ) -> List[dict]:
+        session = self._require_setup_session()
+        state = session.onboarding.select_mode(
+            str(message.get("mode", "")),
+            main_character=message.get(
+                "main_character"
+            ),
+        )
+
+        return [
+            _event(
+                "onboarding_state",
+                request_id,
+                state=session.onboarding.public_state(),
+            ),
+            _event(
+                "reply",
+                request_id,
+                text=_mode_selected_message(
+                    state.player_character_mode
+                ),
+                phase="onboarding",
+            ),
+        ]
+
+    def _onboarding_turn(
+        self,
+        message: Mapping[str, Any],
+        *,
+        request_id,
+        emit: Optional[Callable[[dict], None]],
+    ) -> List[dict]:
+        session = self._require_setup_session()
+        self._require_onboarding_prompt(session)
+
+        text = str(
+            message.get("text", "")
+        ).strip()
+        if not text:
+            raise ProtocolError(
+                "INVALID_REQUEST",
+                "onboarding_turn.text가 비어 있습니다.",
+            )
+
+        session.onboarding.start()
+
+        if emit is not None:
+            emit(
+                _event(
+                    "status",
+                    request_id,
+                    message="캐릭터 생성 중...",
+                )
+            )
+
+        result = session.runner.run_onboarding_turn(
+            text,
+            welcome_text=(
+                session.initialization.welcome_text
+            ),
+            onboarding_state=(
+                session.onboarding.public_state()
+            ),
+        )
+
+        return [
+            _event(
+                "reply",
+                request_id,
+                text=result.text,
+                phase="onboarding",
+                onboarding=(
+                    session.onboarding.public_state()
+                ),
+            )
+        ]
+
+    def _onboarding_finalize(
+        self,
+        *,
+        request_id,
+    ) -> List[dict]:
+        session = self._require_setup_session()
+        init_complete = session.onboarding.finalize()
+
+        return [
+            _event(
+                "session_setup_complete",
+                request_id,
+                game_name=init_complete.game_name,
+                game_id=init_complete.game_id,
+                controls=(
+                    session.host.controls.snapshot()
+                ),
+                onboarding=(
+                    session.onboarding.public_state()
+                ),
             )
         ]
 
@@ -390,22 +622,26 @@ class BackendApplication:
         emit: Optional[Callable[[dict], None]],
     ) -> List[dict]:
         session = self._require_session()
-        if session.needs_setup:
-            raise ProtocolError(
-                "SESSION_NEEDS_SETUP",
-                "새 플레이의 모드 설정이 먼저 필요합니다.",
-            )
 
         self._apply_controls(
             session.host,
             message.get("controls"),
         )
 
-        text = str(message.get("text", ""))
+        text = str(
+            message.get("text", "")
+        )
         if not text.strip():
             raise ProtocolError(
                 "INVALID_REQUEST",
                 "play.text가 비어 있습니다.",
+            )
+
+        if session.needs_setup:
+            return self._route_onboarding_text(
+                text,
+                request_id=request_id,
+                emit=emit,
             )
 
         if emit is not None:
@@ -427,6 +663,72 @@ class BackendApplication:
             )
         ]
 
+    def _route_onboarding_text(
+        self,
+        text: str,
+        *,
+        request_id,
+        emit,
+    ) -> List[dict]:
+        stripped = text.strip()
+
+        if stripped in {
+            "!온보딩",
+            "!시작",
+        }:
+            return self._onboarding_start(
+                request_id=request_id,
+                emit=emit,
+            )
+
+        if stripped == "!새캐릭터":
+            return self._onboarding_select_mode(
+                {"mode": "original"},
+                request_id=request_id,
+            )
+
+        if stripped == "!관찰자":
+            return self._onboarding_select_mode(
+                {"mode": "observer"},
+                request_id=request_id,
+            )
+
+        if stripped.startswith(
+            "!기존캐릭터"
+        ):
+            _, _, path = stripped.partition(" ")
+            path = path.strip()
+            if not path:
+                return [
+                    _event(
+                        "reply",
+                        request_id,
+                        text=(
+                            "사용법: !기존캐릭터 "
+                            "<Distribution entity 경로>"
+                        ),
+                        phase="onboarding",
+                    )
+                ]
+            return self._onboarding_select_mode(
+                {
+                    "mode": "existing",
+                    "main_character": path,
+                },
+                request_id=request_id,
+            )
+
+        if stripped == "!캐릭터확정":
+            return self._onboarding_finalize(
+                request_id=request_id,
+            )
+
+        return self._onboarding_turn(
+            {"text": text},
+            request_id=request_id,
+            emit=emit,
+        )
+
     def _checkpoint(
         self,
         *,
@@ -437,7 +739,7 @@ class BackendApplication:
         if session.needs_setup:
             raise ProtocolError(
                 "SESSION_NEEDS_SETUP",
-                "초기 설정이 끝나기 전에는 저장할 수 없습니다.",
+                "온보딩이 끝나기 전에는 저장할 수 없습니다.",
             )
 
         if emit is not None:
@@ -449,7 +751,9 @@ class BackendApplication:
                 )
             )
 
-        result = session.runner.run_maintenance("!저장")
+        result = session.runner.run_maintenance(
+            "!저장"
+        )
         return [
             _event(
                 "checkpoint_complete",
@@ -458,7 +762,11 @@ class BackendApplication:
             )
         ]
 
-    def _session_state_event(self, *, request_id) -> dict:
+    def _session_state_event(
+        self,
+        *,
+        request_id,
+    ) -> dict:
         if self.active_session is None:
             return _event(
                 "session_state",
@@ -471,15 +779,28 @@ class BackendApplication:
             "session_state",
             request_id,
             active=True,
-            game_name=session.initialization.game_name,
-            game_id=session.initialization.game_id,
+            game_name=(
+                session.initialization.game_name
+            ),
+            game_id=(
+                session.initialization.game_id
+            ),
             needs_setup=session.needs_setup,
-            controls=session.host.controls.snapshot(),
+            controls=(
+                session.host.controls.snapshot()
+            ),
+            onboarding=(
+                session.onboarding.public_state()
+            ),
         )
 
-    def _current_control_router(self) -> ControlRouter:
+    def _current_control_router(
+        self,
+    ) -> ControlRouter:
         if self.active_session is not None:
-            return self.active_session.host.control_router
+            return (
+                self.active_session.host.control_router
+            )
         return self.default_control_router
 
     def _apply_controls(
@@ -497,7 +818,10 @@ class BackendApplication:
 
         for name, value in raw_controls.items():
             try:
-                host.controls.set(str(name), value)
+                host.controls.set(
+                    str(name),
+                    value,
+                )
             except ValueError as exc:
                 raise ProtocolError(
                     "INVALID_CONTROL",
@@ -508,13 +832,36 @@ class BackendApplication:
             host.controls.snapshot()
         )
 
-    def _require_session(self) -> ActiveSession:
+    def _require_session(
+        self,
+    ) -> ActiveSession:
         if self.active_session is None:
             raise ProtocolError(
                 "NO_ACTIVE_SESSION",
                 "먼저 open_session을 호출해 주세요.",
             )
         return self.active_session
+
+    def _require_setup_session(
+        self,
+    ) -> ActiveSession:
+        session = self._require_session()
+        if not session.needs_setup:
+            raise ProtocolError(
+                "SESSION_ALREADY_SETUP",
+                "현재 세션은 이미 온보딩이 완료되어 있습니다.",
+            )
+        return session
+
+    @staticmethod
+    def _require_onboarding_prompt(
+        session: ActiveSession,
+    ) -> None:
+        if not session.host.prompt_bundle.has_onboarding():
+            raise ProtocolError(
+                "ONBOARDING_PROMPT_MISSING",
+                "prompt bundle에 onboarding.md가 필요합니다.",
+            )
 
 
 def _default_runner_factory(
@@ -527,9 +874,17 @@ def _default_runner_factory(
     )
 
 
-def _env_path(name: str, default: Path) -> Path:
-    value = os.environ.get(name, "").strip()
-    return Path(value or default).expanduser().resolve()
+def _env_path(
+    name: str,
+    default: Path,
+) -> Path:
+    value = os.environ.get(
+        name,
+        "",
+    ).strip()
+    return Path(
+        value or default
+    ).expanduser().resolve()
 
 
 def _message_or_env_path(
@@ -537,9 +892,14 @@ def _message_or_env_path(
     message_key: str,
     env_key: str,
 ) -> Path:
-    value = str(message.get(message_key, "")).strip()
+    value = str(
+        message.get(message_key, "")
+    ).strip()
     if not value:
-        value = os.environ.get(env_key, "").strip()
+        value = os.environ.get(
+            env_key,
+            "",
+        ).strip()
     if not value:
         raise ProtocolError(
             "PATH_NOT_CONFIGURED",
@@ -548,18 +908,28 @@ def _message_or_env_path(
                 env_key,
             ),
         )
-    return Path(value).expanduser().resolve()
+    return Path(
+        value
+    ).expanduser().resolve()
 
 
-def _event(event_type: str, request_id=None, **payload) -> dict:
-    event = {"type": event_type}
+def _event(
+    event_type: str,
+    request_id=None,
+    **payload,
+) -> dict:
+    event = {
+        "type": event_type,
+    }
     if request_id is not None:
         event["request_id"] = request_id
     event.update(payload)
     return event
 
 
-def _string_mapping(value) -> Dict[str, str]:
+def _string_mapping(
+    value,
+) -> Dict[str, str]:
     if value is None:
         return {}
     if not isinstance(value, Mapping):
@@ -571,3 +941,24 @@ def _string_mapping(value) -> Dict[str, str]:
         str(key): str(item)
         for key, item in value.items()
     }
+
+
+def _mode_selected_message(
+    mode: Optional[str],
+) -> str:
+    if mode == "original":
+        return (
+            "새 캐릭터 모드입니다. "
+            "대화로 캐릭터를 만든 뒤 !캐릭터확정을 입력하세요."
+        )
+    if mode == "existing":
+        return (
+            "기존 캐릭터 모드가 선택되었습니다. "
+            "!캐릭터확정으로 시작할 수 있습니다."
+        )
+    if mode == "none":
+        return (
+            "관찰자 모드가 선택되었습니다. "
+            "!캐릭터확정으로 시작할 수 있습니다."
+        )
+    return "온보딩 모드를 선택했습니다."

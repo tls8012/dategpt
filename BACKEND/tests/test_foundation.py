@@ -115,12 +115,24 @@ class FoundationTests(unittest.TestCase):
             )
             ws.scratchpad.write_text("current.md", "WORKING")
 
-            host = RuntimeHost(prompt_bundle=PromptBundle(prompts), workspace=ws)
+            scenario_root = base / "scenario"
+            scenario_root.mkdir()
+            host = RuntimeHost(
+                prompt_bundle=PromptBundle(prompts),
+                scenario=ScenarioPack(scenario_root),
+                workspace=ws,
+            )
             host.route_control({"type": "set_control", "name": "initiative", "value": "high"})
             turn = host.begin_turn("hello")
 
             self.assertEqual(turn.controls["initiative"], "high")
-            self.assertEqual(turn.scratchpad["current.md"], "WORKING")
+            self.assertTrue(
+                any(
+                    message["role"] == "system"
+                    and "WORKING" in message["content"]
+                    for message in turn.context_messages
+                )
+            )
             self.assertIn("RUNTIME", turn.system_prompt)
 
     def test_initializer_creates_original_compatible_skeleton(self):

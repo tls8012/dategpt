@@ -11,7 +11,7 @@ from ..fs import RootedTextStore
 
 @dataclass(frozen=True)
 class PromptSnapshot:
-    """Immutable runtime prompt material for one agent invocation."""
+    """Immutable prompt material for one agent invocation."""
 
     system_prompt: str
     controls: Dict[str, Any]
@@ -20,22 +20,19 @@ class PromptSnapshot:
 
 
 class PromptBundle:
-    """Loads LLM runtime policy from an independently managed directory.
-
-    DateGPT does not send init.md to the model. Deterministic initialization
-    from the original init.md contract lives in dategpt.bootstrap instead.
-    This keeps the long-lived gameplay prompt limited to runtime.md.
-    """
+    """Loads independently licensed LLM policy files."""
 
     def __init__(
         self,
         root: Path,
         *,
         runtime_name: str = "runtime.md",
+        onboarding_name: str = "onboarding.md",
         controls_name: str = "controls.json",
     ) -> None:
         self.store = RootedTextStore(root, writable=False)
         self.runtime_name = runtime_name
+        self.onboarding_name = onboarding_name
         self.controls_name = controls_name
 
     @property
@@ -45,36 +42,65 @@ class PromptBundle:
     def read_runtime(self) -> str:
         return self.store.read_text(self.runtime_name)
 
+    def has_onboarding(self) -> bool:
+        return self.store.exists(self.onboarding_name)
+
+    def read_onboarding(self) -> str:
+        if not self.has_onboarding():
+            raise FileNotFoundError(self.onboarding_name)
+        return self.store.read_text(self.onboarding_name)
+
     def control_manifest(self) -> Dict[str, Any]:
         if not self.store.exists(self.controls_name):
             return {}
-        data = json.loads(self.store.read_text(self.controls_name))
+        data = json.loads(
+            self.store.read_text(self.controls_name)
+        )
         if not isinstance(data, dict):
-            raise ValueError("controls.json must contain a JSON object")
+            raise ValueError(
+                "controls.json must contain a JSON object"
+            )
         return data
 
-    def snapshot(self, *, controls: Mapping[str, Any]) -> PromptSnapshot:
-        runtime = self.read_runtime()
+    def snapshot(
+        self,
+        *,
+        controls: Mapping[str, Any],
+        stable_context: str = "",
+        mode_prompt: str = "",
+        mode_prompt_name: str = "",
+    ) -> PromptSnapshot:
+        parts = [self.read_runtime().rstrip()]
+        source_files = [self.runtime_name]
 
-        # Small, mutable settings are repeated every player turn and must not
-        # depend on model memory.
+        if stable_context:
+            parts.append(stable_context.rstrip())
+
+        if mode_prompt:
+            parts.append(mode_prompt.rstrip())
+            if mode_prompt_name:
+                source_files.append(mode_prompt_name)
+
         control_block = json.dumps(
             dict(controls),
             ensure_ascii=False,
             sort_keys=True,
             indent=2,
         )
-        system_prompt = (
-            runtime.rstrip()
-            + "\n\n# CURRENT ENGINE CONTROLS\n"
-            + "These values are the current runtime settings for this turn.\n"
+        parts.append(
+            "# CURRENT ENGINE CONTROLS\n"
+            "These values are the current runtime settings for this turn.\n"
             + control_block
         )
-        digest = hashlib.sha256(system_prompt.encode("utf-8")).hexdigest()
+
+        system_prompt = "\n\n".join(parts)
+        digest = hashlib.sha256(
+            system_prompt.encode("utf-8")
+        ).hexdigest()
 
         return PromptSnapshot(
             system_prompt=system_prompt,
             controls=dict(controls),
-            source_files=(self.runtime_name,),
+            source_files=tuple(source_files),
             fingerprint=digest,
         )

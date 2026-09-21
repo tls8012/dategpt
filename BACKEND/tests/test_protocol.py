@@ -14,6 +14,8 @@ class FakeRunner:
         self.model_factory = model_factory
         self.turns = []
         self.maintenance = []
+        self.onboarding_turns = []
+        self.recorded_assistant = []
 
     def run_turn(self, text):
         self.turns.append(text)
@@ -31,6 +33,43 @@ class FakeRunner:
             raw_result={},
         )
 
+    def run_onboarding_turn(
+        self,
+        text,
+        *,
+        welcome_text,
+        onboarding_state,
+        record_history=True,
+    ):
+        self.onboarding_turns.append(
+            {
+                "text": text,
+                "welcome_text": welcome_text,
+                "state": dict(onboarding_state),
+                "record_history": record_history,
+            }
+        )
+        return AgentRunResult(
+            text="ONBOARDING: " + text,
+            prompt_fingerprint="onboarding-test",
+            raw_result={},
+        )
+
+    def record_assistant_message(
+        self,
+        text,
+        *,
+        prompt_fingerprint,
+        phase,
+    ):
+        self.recorded_assistant.append(
+            {
+                "text": text,
+                "prompt_fingerprint": prompt_fingerprint,
+                "phase": phase,
+            }
+        )
+
 
 def write_scenario(root: Path):
     root.mkdir(parents=True)
@@ -45,12 +84,21 @@ def write_scenario(root: Path):
         "welcome",
         encoding="utf-8",
     )
+    (root / "entities").mkdir()
+    (root / "entities" / "existing.md").write_text(
+        "# Existing Character",
+        encoding="utf-8",
+    )
 
 
 def write_prompts(root: Path):
     root.mkdir(parents=True)
     (root / "runtime.md").write_text(
         "RUNTIME",
+        encoding="utf-8",
+    )
+    (root / "onboarding.md").write_text(
+        "ONBOARDING POLICY",
         encoding="utf-8",
     )
 
@@ -69,39 +117,37 @@ class ProtocolTests(unittest.TestCase):
             ),
         )
 
-    def test_single_active_session_setup_play_and_checkpoint(self):
+    def make_open_app(self, base: Path):
+        scenario = base / "scenario"
+        prompts = base / "prompts"
+        write_scenario(scenario)
+        write_prompts(prompts)
+
+        with patch.dict(
+            "os.environ",
+            {
+                "DATEGPT_SAVE_DIR": str(base / "games"),
+                "DATEGPT_RUNTIME_DIR": str(base / "runtime"),
+            },
+            clear=False,
+        ):
+            app = self.make_app(base)
+
+        opened = app.handle({
+            "type": "open_session",
+            "request_id": "1",
+            "scenario_path": str(scenario),
+            "prompt_path": str(prompts),
+        })
+        return app, scenario, prompts, opened
+
+    def test_direct_setup_play_and_checkpoint(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
-            scenario = base / "scenario"
-            prompts = base / "prompts"
-            write_scenario(scenario)
-            write_prompts(prompts)
+            app, _, _, opened = self.make_open_app(base)
 
-            with patch.dict(
-                "os.environ",
-                {
-                    "DATEGPT_SAVE_DIR": str(base / "games"),
-                    "DATEGPT_RUNTIME_DIR": str(base / "runtime"),
-                },
-                clear=False,
-            ):
-                app = self.make_app(base)
-
-            opened = app.handle({
-                "type": "open_session",
-                "request_id": "1",
-                "scenario_path": str(scenario),
-                "prompt_path": str(prompts),
-            })
             self.assertEqual(opened[0]["type"], "session_opened")
             self.assertTrue(opened[0]["needs_setup"])
-
-            needs_setup = app.handle({
-                "type": "play",
-                "request_id": "2",
-                "text": "hello",
-            })
-            self.assertEqual(needs_setup[0]["code"], "SESSION_NEEDS_SETUP")
 
             setup = app.handle({
                 "type": "setup_session",
@@ -147,6 +193,105 @@ class ProtocolTests(unittest.TestCase):
             self.assertEqual(
                 app.active_session.runner.maintenance,
                 ["!저장"],
+            )
+
+    def test_new_game_text_input_routes_into_onboarding(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+
+            statuses = []
+            reply = app.handle(
+                {
+                    "type": "say",
+                    "request_id": "2",
+                    "text": "어떤 캐릭터를 만들 수 있어?",
+                },
+                emit=statuses.append,
+            )
+
+            self.assertEqual(statuses[0]["type"], "status")
+            self.assertEqual(reply[0]["type"], "reply")
+            self.assertEqual(reply[0]["phase"], "onboarding")
+            self.assertEqual(
+                app.active_session.onboarding.state.phase,
+                "mode_selection",
+            )
+
+    def test_original_character_draft_finalizes_to_compatible_save(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+
+            selected = app.handle({
+                "type": "say",
+                "request_id": "2",
+                "text": "!새캐릭터",
+            })
+            self.assertEqual(
+                selected[0]["type"],
+                "onboarding_state",
+            )
+
+            missing = app.handle({
+                "type": "say",
+                "request_id": "3",
+                "text": "!캐릭터확정",
+            })
+            self.assertEqual(
+                missing[0]["code"],
+                "CHARACTER_DRAFT_MISSING",
+            )
+
+            app.active_session.workspace.scratchpad.write_text(
+                "onboarding/main_character.md",
+                "# PLAYER\n- name: 유키\n",
+            )
+
+            completed = app.handle({
+                "type": "say",
+                "request_id": "4",
+                "text": "!캐릭터확정",
+            })
+            self.assertEqual(
+                completed[0]["type"],
+                "session_setup_complete",
+            )
+            self.assertFalse(
+                app.active_session.needs_setup
+            )
+            self.assertEqual(
+                app.active_session.workspace.save.read_text(
+                    "entities/main_character.md"
+                ),
+                "# PLAYER\n- name: 유키\n",
+            )
+
+    def test_existing_mode_is_deterministic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+
+            existing = app.handle({
+                "type": "onboarding_select_mode",
+                "mode": "existing",
+                "main_character": "entities/existing.md",
+            })
+            self.assertEqual(
+                existing[0]["type"],
+                "onboarding_state",
+            )
+
+            completed = app.handle({
+                "type": "onboarding_finalize",
+            })
+            self.assertEqual(
+                completed[0]["type"],
+                "session_setup_complete",
+            )
+            self.assertEqual(
+                app.active_session.initialization.init_complete.main_character,
+                "entities/existing.md",
             )
 
     def test_open_session_replaces_previous_active_session(self):

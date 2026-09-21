@@ -6,40 +6,24 @@ from typing import List
 from .filesystem import AgentFilesystem
 
 
-def build_langchain_tools(filesystem: AgentFilesystem) -> List[object]:
-    """Wrap DateGPT capabilities as LangChain tools.
-
-    LangChain is imported lazily so bootstrap, save compatibility, and tests
-    that do not invoke an agent can run without importing the framework.
-    """
-
-    try:
-        from langchain.tools import tool
-    except ImportError as exc:
-        raise RuntimeError(
-            "LangChain is required to build agent tools. "
-            "Install BACKEND/requirements.txt."
-        ) from exc
+def build_langchain_tools(
+    filesystem: AgentFilesystem,
+) -> List[object]:
+    tool = _tool_decorator()
 
     @tool("content_read")
     def content_read(path: str) -> str:
-        """Read one exact file from the mounted read-only scenario pack.
-
-        Use manifest/index pointers when available. Do not read hidden content
-        unless the runtime rules and current game state authorize that exact
-        hidden file.
-        """
+        """Read one exact file from the mounted read-only scenario pack."""
 
         return filesystem.content_read(path)
 
     @tool("content_list")
     def content_list(path: str = ".") -> str:
-        """List files below a scenario-pack directory without modifying it.
+        """List files below a precise scenario-pack directory."""
 
-        Prefer precise directories and manifests over scanning the whole pack.
-        """
-
-        return _json(filesystem.content_list(path))
+        return _json(
+            filesystem.content_list(path)
+        )
 
     @tool("content_search")
     def content_search(
@@ -47,11 +31,7 @@ def build_langchain_tools(filesystem: AgentFilesystem) -> List[object]:
         scope: str = ".",
         limit: int = 20,
     ) -> str:
-        """Lexically search scenario text files.
-
-        Ordinary searches exclude hidden/. Set scope to an exact hidden/
-        directory only when runtime rules already authorize that lookup.
-        """
+        """Lexically search public scenario text files."""
 
         return _json(
             filesystem.content_search(
@@ -63,15 +43,17 @@ def build_langchain_tools(filesystem: AgentFilesystem) -> List[object]:
 
     @tool("save_read")
     def save_read(path: str) -> str:
-        """Read an exact file from the current compatible game Save overlay."""
+        """Read an exact file from the compatible Save overlay."""
 
         return filesystem.save_read(path)
 
     @tool("save_list")
     def save_list(path: str = ".") -> str:
-        """List files below a directory in the current compatible Save."""
+        """List files below a directory in the compatible Save."""
 
-        return _json(filesystem.save_list(path))
+        return _json(
+            filesystem.save_list(path)
+        )
 
     @tool("save_search")
     def save_search(
@@ -79,7 +61,7 @@ def build_langchain_tools(filesystem: AgentFilesystem) -> List[object]:
         scope: str = ".",
         limit: int = 20,
     ) -> str:
-        """Lexically search the current compatible Save overlay."""
+        """Lexically search the compatible Save overlay."""
 
         return _json(
             filesystem.save_search(
@@ -91,71 +73,20 @@ def build_langchain_tools(filesystem: AgentFilesystem) -> List[object]:
 
     @tool("save_write")
     def save_write(path: str, content: str) -> str:
-        """Create or replace one text file in the current compatible Save.
-
-        Preserve the runtime save contract. Store semantic long-term state here,
-        not raw conversation transcripts or temporary reasoning.
-        """
+        """Create or replace one semantic Save text file."""
 
         return filesystem.save_write(path, content)
 
     @tool("save_delete")
     def save_delete(path: str) -> str:
-        """Delete one file from the current compatible Save.
-
-        Use only when runtime save semantics require removing stale overlay
-        state. Directories cannot be deleted with this tool.
-        """
+        """Delete one stale file from the compatible Save."""
 
         return filesystem.save_delete(path)
 
-    @tool("scratchpad_read")
-    def scratchpad_read(path: str) -> str:
-        """Read one DateGPT working-memory file.
-
-        Scratchpad content is mutable working state, not canonical world truth.
-        """
-
-        return filesystem.scratchpad_read(path)
-
-    @tool("scratchpad_list")
-    def scratchpad_list(path: str = ".") -> str:
-        """List DateGPT working-memory files for the current session."""
-
-        return _json(filesystem.scratchpad_list(path))
-
-    @tool("scratchpad_search")
-    def scratchpad_search(
-        query: str,
-        scope: str = ".",
-        limit: int = 20,
-    ) -> str:
-        """Lexically search DateGPT working-memory files."""
-
-        return _json(
-            filesystem.scratchpad_search(
-                query,
-                scope=scope,
-                limit=limit,
-            )
-        )
-
-    @tool("scratchpad_write")
-    def scratchpad_write(path: str, content: str) -> str:
-        """Create or replace a DateGPT working-memory file.
-
-        Use this for plans, threads, retrieval notes, continuity reminders, and
-        other revisable state that should survive across player turns but is not
-        canonical Save state.
-        """
-
-        return filesystem.scratchpad_write(path, content)
-
-    @tool("scratchpad_delete")
-    def scratchpad_delete(path: str) -> str:
-        """Delete one obsolete DateGPT working-memory file."""
-
-        return filesystem.scratchpad_delete(path)
+    scratchpad_tools = _scratchpad_tools(
+        tool,
+        filesystem,
+    )
 
     return [
         content_read,
@@ -166,12 +97,130 @@ def build_langchain_tools(filesystem: AgentFilesystem) -> List[object]:
         save_search,
         save_write,
         save_delete,
+        *scratchpad_tools,
+    ]
+
+
+def build_onboarding_tools(
+    filesystem: AgentFilesystem,
+) -> List[object]:
+    """Restricted onboarding tools: scenario read + scratchpad only."""
+
+    tool = _tool_decorator()
+
+    @tool("content_read")
+    def content_read(path: str) -> str:
+        """Read one exact public scenario file needed for onboarding."""
+
+        return filesystem.content_read(path)
+
+    @tool("content_list")
+    def content_list(path: str = ".") -> str:
+        """List a precise public scenario directory."""
+
+        return _json(
+            filesystem.content_list(path)
+        )
+
+    @tool("content_search")
+    def content_search(
+        query: str,
+        scope: str = ".",
+        limit: int = 20,
+    ) -> str:
+        """Search public scenario material during character creation."""
+
+        return _json(
+            filesystem.content_search(
+                query,
+                scope=scope,
+                limit=limit,
+            )
+        )
+
+    return [
+        content_read,
+        content_list,
+        content_search,
+        *_scratchpad_tools(
+            tool,
+            filesystem,
+        ),
+    ]
+
+
+def _scratchpad_tools(tool, filesystem):
+    @tool("scratchpad_read")
+    def scratchpad_read(path: str) -> str:
+        """Read one DateGPT working-memory file."""
+
+        return filesystem.scratchpad_read(path)
+
+    @tool("scratchpad_list")
+    def scratchpad_list(path: str = ".") -> str:
+        """List DateGPT working-memory files."""
+
+        return _json(
+            filesystem.scratchpad_list(path)
+        )
+
+    @tool("scratchpad_search")
+    def scratchpad_search(
+        query: str,
+        scope: str = ".",
+        limit: int = 20,
+    ) -> str:
+        """Search DateGPT working-memory files."""
+
+        return _json(
+            filesystem.scratchpad_search(
+                query,
+                scope=scope,
+                limit=limit,
+            )
+        )
+
+    @tool("scratchpad_write")
+    def scratchpad_write(
+        path: str,
+        content: str,
+    ) -> str:
+        """Create or replace working memory.
+
+        During original-character onboarding, keep the current character draft
+        at onboarding/main_character.md. This is not canonical Save state until
+        the user explicitly finalizes onboarding.
+        """
+
+        return filesystem.scratchpad_write(
+            path,
+            content,
+        )
+
+    @tool("scratchpad_delete")
+    def scratchpad_delete(path: str) -> str:
+        """Delete one obsolete working-memory file."""
+
+        return filesystem.scratchpad_delete(path)
+
+    return [
         scratchpad_read,
         scratchpad_list,
         scratchpad_search,
         scratchpad_write,
         scratchpad_delete,
     ]
+
+
+def _tool_decorator():
+    try:
+        from langchain.tools import tool
+    except ImportError as exc:
+        raise RuntimeError(
+            "LangChain is required to build agent tools. "
+            "Install BACKEND/requirements.txt."
+        ) from exc
+    return tool
 
 
 def _json(value) -> str:
