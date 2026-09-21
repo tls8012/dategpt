@@ -1,6 +1,25 @@
 from __future__ import annotations
 
+import unicodedata
 from typing import Dict
+
+
+def _normalize_field_key(value: str) -> str:
+    key = unicodedata.normalize("NFC", str(value))
+    key = key.replace("\\ufeff", "")
+    key = key.replace("\\u200b", "")
+    key = key.replace("\\u200c", "")
+    key = key.replace("\\u200d", "")
+    key = key.replace("\\u2060", "")
+    key = key.strip()
+
+    for token in (
+        "_", "-", ".", ":", "*", "`",
+        "[", "]", "(", ")", "#", "+",
+    ):
+        key = key.replace("\\\\" + token, token)
+
+    return key
 
 
 def parse_markdown_fields(text: str) -> Dict[str, str]:
@@ -36,7 +55,7 @@ def parse_markdown_fields(text: str) -> Dict[str, str]:
             continue
 
         key, value = payload.split(":", 1)
-        key = key.strip()
+        key = _normalize_field_key(key)
         if (
             len(key) >= 4
             and key.startswith("**")
