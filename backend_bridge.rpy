@@ -6,6 +6,8 @@ default backend_session = {}
 default backend_controls = {}
 default backend_model_settings = {}
 default backend_onboarding = {}
+default backend_cartridge = {}
+default backend_cartridges = []
 
 
 transform backend_spinner:
@@ -312,6 +314,26 @@ init python:
         return True
 
 
+    @backend_handler("cartridge_installed")
+    def handle_cartridge_installed(msg):
+
+        store.backend_cartridge = dict(
+            msg.get("cartridge", {})
+        )
+        store.backend_waiting = False
+        return True
+
+
+    @backend_handler("cartridge_list")
+    def handle_cartridge_list(msg):
+
+        store.backend_cartridges = list(
+            msg.get("cartridges", [])
+        )
+        store.backend_waiting = False
+        return True
+
+
     @backend_handler("session_opened")
     def handle_session_opened(msg):
 
@@ -330,6 +352,7 @@ init python:
     def handle_session_setup_complete(msg):
 
         store.backend_session.update(msg)
+        store.backend_session["needs_setup"] = False
         store.backend_controls = dict(
             msg.get("controls", {})
         )
