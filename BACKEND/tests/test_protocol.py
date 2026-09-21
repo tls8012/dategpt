@@ -856,6 +856,44 @@ class ProtocolTests(unittest.TestCase):
                 ),
             )
 
+    def test_play_text_scenario_control_bypasses_llm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+
+            before_turns = list(
+                app.active_session.runner.turns
+            )
+            result = app.handle({
+                "type": "play",
+                "text": "!설정 gender female",
+            })
+
+            self.assertEqual(
+                app.active_session.host.controls.extra[
+                    "gender"
+                ],
+                "female",
+            )
+            self.assertEqual(
+                app.active_session.runner.turns,
+                before_turns,
+            )
+            self.assertEqual(
+                result[0]["type"],
+                "control_state",
+            )
+            self.assertEqual(
+                result[-1]["type"],
+                "reply",
+            )
+
     def test_model_commands_work_without_active_session(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
