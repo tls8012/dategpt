@@ -118,7 +118,8 @@ Current controls may be repeated on every request.
 Gameplay and onboarding LLM replies use a structured VN response schema. The
 validated response contains ordered `segments`; each segment is narration,
 dialogue, or system text. Dialogue segments carry the visible speaker name
-separately from the text.
+separately from the text. Every segment also carries an `assets` list containing
+zero or more registered asset IDs selected for that presentation unit.
 
 When an emitter is available, a completed structured response is projected onto
 the JSONL protocol as:
@@ -133,9 +134,11 @@ reply
 ```
 
 Each `presentation_segment` is already a frontend display unit, normally one
-complete sentence. The final `reply` still includes both flattened `text`
-and `segments` for compatibility. This is sentence-event delivery after
-structured validation; it is not yet provider token-latency streaming.
+complete sentence, and may select multiple registered assets. The final `reply`
+still includes both flattened `text` and `segments` for compatibility.
+Presentation events are emitted only after the single LLM call has completed
+and the structured response has been validated; DateGPT does not stream partial
+structured output.
 
 Restored `session_opened` events include recent conversation history and the
 current rollback turn list so a desktop frontend can reconstruct the visible
