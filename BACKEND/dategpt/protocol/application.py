@@ -161,6 +161,28 @@ class BackendApplication:
                     )
                 ]
 
+            if message_type == "list_game_instances":
+                game_name = str(
+                    message.get("game_name", "")
+                ).strip()
+                if not game_name:
+                    raise ProtocolError(
+                        "INVALID_REQUEST",
+                        "list_game_instances.game_name이 필요합니다.",
+                    )
+                return [
+                    _event(
+                        "game_instance_list",
+                        request_id,
+                        game_name=game_name,
+                        game_ids=list(
+                            self.initializer.list_instance_ids(
+                                game_name
+                            )
+                        ),
+                    )
+                ]
+
             if message_type == "open_session":
                 return self._open_session(
                     message,
