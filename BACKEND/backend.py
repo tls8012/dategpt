@@ -1,8 +1,11 @@
 import json
+import os
 import sys
+from pathlib import Path
 
 from dategpt.controls import ControlState
 from dategpt.host import RuntimeHost
+from dategpt.models import ModelSettingsRouter, ModelSettingsStore
 
 
 # pipe에서도 한글 인코딩을 명확히 맞춘다.
@@ -15,6 +18,21 @@ if hasattr(sys.stdout, "reconfigure"):
         line_buffering=True,
     )
 
+
+BACKEND_DIR = Path(__file__).resolve().parent
+CONFIG_DIR = Path(
+    os.environ.get(
+        "DATEGPT_CONFIG_DIR",
+        str(BACKEND_DIR / "user_data" / "config"),
+    )
+).expanduser().resolve()
+
+model_settings_store = ModelSettingsStore(
+    CONFIG_DIR / "model_settings.json"
+)
+model_settings_router = ModelSettingsRouter(
+    model_settings_store
+)
 
 host = RuntimeHost(controls=ControlState())
 
@@ -42,6 +60,19 @@ def send_control_response(response):
     })
 
 
+def send_model_settings_response(response):
+    if response.settings is not None:
+        send({
+            "type": "model_settings",
+            "settings": response.settings,
+        })
+
+    send({
+        "type": "reply",
+        "text": response.message,
+    })
+
+
 def handle(msg):
     msg_type = msg.get("type")
 
@@ -55,7 +86,13 @@ def handle(msg):
         })
         return True
 
-    # Deterministic controls are always routed before any future LLM call.
+    # Model/provider/API-key settings are deterministic and never call an LLM.
+    model_response = model_settings_router.try_handle_message(msg)
+    if model_response.handled:
+        send_model_settings_response(model_response)
+        return True
+
+    # Other deterministic runtime controls are also handled before any LLM.
     control_response = host.route_control(msg)
     if control_response.handled:
         send_control_response(control_response)
@@ -69,8 +106,8 @@ def handle(msg):
             "message": "메세지 처리중...",
         })
 
-        # AgentRunner will replace this stub. The important boundary already
-        # exists: controls above never consume an LLM call.
+        # Session mount/setup will replace this stub with AgentRunner. Model
+        # selection is already available through ModelSettingsStore/Factory.
         send({
             "type": "reply",
             "text": "백엔드가 받음: {}".format(text),

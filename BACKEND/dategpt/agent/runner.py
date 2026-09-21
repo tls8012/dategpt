@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
@@ -29,12 +28,19 @@ class AgentRunner:
         self,
         *,
         host: RuntimeHost,
-        model: Any,
+        model: Any = None,
+        model_factory: Optional[Callable[[], Any]] = None,
         agent_factory: Optional[Callable[..., Any]] = None,
         tool_factory: Optional[Callable[[AgentFilesystem], List[object]]] = None,
     ) -> None:
+        if model is None and model_factory is None:
+            raise ValueError("model or model_factory is required")
+        if model is not None and model_factory is not None:
+            raise ValueError("provide model or model_factory, not both")
+
         self.host = host
         self.model = model
+        self.model_factory = model_factory
         self.agent_factory = agent_factory or _default_agent_factory
         self.tool_factory = tool_factory or build_langchain_tools
 
@@ -61,11 +67,14 @@ class AgentRunner:
             workspace=self.host.workspace,
         )
         tools = self.tool_factory(filesystem)
+        model = (
+            self.model_factory()
+            if self.model_factory is not None
+            else self.model
+        )
 
-        # system_prompt is supplied once when constructing this turn's harness.
-        # We do not append runtime.md again as a message after every tool call.
         agent = self.agent_factory(
-            model=self.model,
+            model=model,
             tools=tools,
             system_prompt=turn.system_prompt,
         )
@@ -74,9 +83,6 @@ class AgentRunner:
         raw_result = agent.invoke({"messages": messages})
         text = _extract_final_text(raw_result)
 
-        # Persist only the externally meaningful conversation boundary. The
-        # internal tool loop remains ephemeral; semantic state should be written
-        # explicitly through Save/scratchpad tools.
         self.host.workspace.history.append(
             {
                 "role": "user",
