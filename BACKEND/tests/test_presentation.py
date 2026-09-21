@@ -18,6 +18,10 @@ class PresentationTests(unittest.TestCase):
                     "kind": "dialogue",
                     "speaker": "ChatGPT",
                     "text": "늦어서 미안해.",
+                    "assets": [
+                        "bg.classroom.evening",
+                        "chatgpt.smile",
+                    ],
                 },
                 {
                     "kind": "dialogue",
@@ -39,6 +43,13 @@ class PresentationTests(unittest.TestCase):
             response.public_segments()[1]["speaker"],
             "ChatGPT",
         )
+        self.assertEqual(
+            response.public_segments()[1]["assets"],
+            [
+                "bg.classroom.evening",
+                "chatgpt.smile",
+            ],
+        )
 
     def test_dialogue_requires_speaker(self):
         with self.assertRaises(ValidationError):
@@ -51,6 +62,37 @@ class PresentationTests(unittest.TestCase):
                     }
                 ]
             })
+
+    def test_assets_default_empty_and_are_normalized(self):
+        response = VNResponse.model_validate({
+            "segments": [
+                {
+                    "kind": "narration",
+                    "speaker": "",
+                    "text": "창밖에 비가 내렸다.",
+                    "assets": [
+                        " bg.rain ",
+                        "bg.rain",
+                        "",
+                        "chatgpt.window",
+                    ],
+                },
+                {
+                    "kind": "dialogue",
+                    "speaker": "ChatGPT",
+                    "text": "비 오네.",
+                },
+            ]
+        })
+
+        self.assertEqual(
+            response.segments[0].assets,
+            ["bg.rain", "chatgpt.window"],
+        )
+        self.assertEqual(
+            response.segments[1].assets,
+            [],
+        )
 
     def test_non_dialogue_speaker_is_cleared(self):
         response = coerce_vn_response({
