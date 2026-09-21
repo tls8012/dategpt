@@ -44,9 +44,9 @@ class FoundationTests(unittest.TestCase):
         )
 
         parsed = parse_markdown_fields(
-            "\\ufeff- game\\\\_name: datellm\\r\\n"
-            "- game\\\\_id: abc123\\r\\n"
-            "- \\u200bgender: female\\r\\n"
+            "\ufeff- game\\_name: datellm\r\n"
+            "- game\\_id: abc123\r\n"
+            "- \u200bgender: female\r\n"
         )
         self.assertEqual(parsed["game_name"], "datellm")
         self.assertEqual(parsed["game_id"], "abc123")
