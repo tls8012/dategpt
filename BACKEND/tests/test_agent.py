@@ -4,6 +4,7 @@ from pathlib import Path
 
 from dategpt.agent import AgentFilesystem, AgentRunner
 from dategpt.host import RuntimeHost
+from dategpt.presentation import VNResponse
 from dategpt.prompts import PromptBundle
 from dategpt.scenarios import ScenarioPack
 from dategpt.workspace import SessionWorkspace
@@ -302,6 +303,10 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(
                 capture["factory"]["tools"],
                 ["tool-placeholder"],
+            )
+            self.assertIs(
+                capture["factory"]["response_format"],
+                VNResponse,
             )
 
             messages = capture["payload"]["messages"]
