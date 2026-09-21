@@ -19,6 +19,11 @@ def _normalize_field_key(value: str) -> str:
     ):
         key = key.replace("\\" + token, token)
 
+    # Backslashes have no valid meaning in manifest/save field names.
+    # Removing any leftovers recovers keys damaged by Windows/editor
+    # copy-save round trips, e.g. game\\_id or game_\\id.
+    key = key.replace("\\", "")
+
     return key
 
 
