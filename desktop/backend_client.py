@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -26,16 +25,13 @@ class BackendClient(QObject):
         self,
         backend_path: Path,
         *,
-        python_path: Optional[Path] = None,
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
         self.backend_path = Path(backend_path).expanduser().resolve()
-        self.python_path = (
-            Path(python_path).expanduser().resolve()
-            if python_path is not None
-            else self._detect_backend_python()
-        )
+        self.python_path = Path(
+            sys.executable
+        ).resolve()
         self.process = QProcess(self)
         self.process.setProgram(str(self.python_path))
         self.process.setArguments([str(self.backend_path)])
@@ -112,26 +108,6 @@ class BackendClient(QObject):
             self.process.waitForFinished(300)
         if self.is_running:
             self.process.kill()
-
-    def _detect_backend_python(self) -> Path:
-        override = os.environ.get(
-            "DATEGPT_BACKEND_PYTHON",
-            "",
-        ).strip()
-        if override:
-            return Path(override)
-
-        backend_dir = self.backend_path.parent
-        candidates = (
-            backend_dir / "datevenv" / "bin" / "python3",
-            backend_dir / "datevenv" / "Scripts" / "python.exe",
-            backend_dir / ".venv" / "bin" / "python3",
-            backend_dir / ".venv" / "Scripts" / "python.exe",
-        )
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate.resolve()
-        return Path(sys.executable).resolve()
 
     def _on_started(self) -> None:
         self.running_changed.emit(True)
