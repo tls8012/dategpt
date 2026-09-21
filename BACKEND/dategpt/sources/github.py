@@ -26,6 +26,13 @@ class GitHubSource:
         )
 
     @property
+    def ssh_url(self) -> str:
+        return "git@github.com:{}/{}.git".format(
+            self.owner,
+            self.repo,
+        )
+
+    @property
     def cache_key(self) -> str:
         digest = hashlib.sha256(
             "{}:{}:{}".format(
@@ -196,19 +203,44 @@ class GitHubSourceResolver:
             shutil.rmtree(temp)
 
         try:
-            self._run(
-                [
-                    self.git_binary,
-                    "clone",
-                    "--depth",
-                    "1",
-                    "--branch",
-                    source.ref,
-                    "--single-branch",
-                    source.clone_url,
-                    str(temp),
-                ]
-            )
+            clone_args = [
+                self.git_binary,
+                "clone",
+                "--depth",
+                "1",
+                "--branch",
+                source.ref,
+                "--single-branch",
+            ]
+
+            try:
+                self._run(
+                    clone_args
+                    + [
+                        source.clone_url,
+                        str(temp),
+                    ]
+                )
+            except RuntimeError as https_error:
+                if temp.exists():
+                    shutil.rmtree(temp)
+
+                try:
+                    self._run(
+                        clone_args
+                        + [
+                            source.ssh_url,
+                            str(temp),
+                        ]
+                    )
+                except RuntimeError as ssh_error:
+                    raise RuntimeError(
+                        "GitHub clone failed over HTTPS and SSH. "
+                        "HTTPS: {} | SSH: {}".format(
+                            https_error,
+                            ssh_error,
+                        )
+                    ) from ssh_error
 
             if checkout.exists():
                 shutil.rmtree(checkout)
