@@ -161,7 +161,8 @@ def write_scenario(root: Path):
     (root / "file-manifest.md").write_text(
         "# FILE MANIFEST\n\n"
         "- `GAME_NAME: protocol-test`\n"
-        "- `CONTENT_ROOT: .`\n",
+        "- `CONTENT_ROOT: .`\n"
+        "- `control.gender: unspecified`\n",
         encoding="utf-8",
     )
     (root / "story").mkdir()
@@ -795,12 +796,20 @@ class ProtocolTests(unittest.TestCase):
             base = Path(tmp)
             app, _, _, _ = self.make_open_app(base)
 
+            self.assertEqual(
+                app.active_session.host.controls.extra[
+                    "gender"
+                ],
+                "unspecified",
+            )
+
             changed = app.handle({
                 "type": "set_controls",
                 "controls": {
                     "language": "English",
                     "initiative": "high",
                     "world_consistency": "low",
+                    "gender": "female",
                 },
             })
             controls = changed[0]["controls"]
@@ -822,6 +831,22 @@ class ProtocolTests(unittest.TestCase):
                     "language"
                 ],
                 "English",
+            )
+            self.assertEqual(
+                controls["gender"],
+                "female",
+            )
+            self.assertEqual(
+                app.active_session.initialization.init_complete.extra_fields[
+                    "gender"
+                ],
+                "female",
+            )
+            self.assertIn(
+                "- gender: female",
+                app.active_session.workspace.save.read_text(
+                    "init완료.md"
+                ),
             )
 
     def test_model_commands_work_without_active_session(self):
