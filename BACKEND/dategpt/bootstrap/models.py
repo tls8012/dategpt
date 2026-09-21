@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, Optional
 
+from ..pointers import canonicalize_game_pointers, game_pointer
 from .markdown import parse_markdown_fields
 
 
@@ -26,11 +27,9 @@ class ScenarioManifest:
     def parse(cls, text: str) -> "ScenarioManifest":
         fields = parse_markdown_fields(text)
         game_name = fields.get("GAME_NAME", "").strip()
-        content_root = fields.get("CONTENT_ROOT", "").strip()
+        content_root = fields.get("CONTENT_ROOT", ".").strip() or "."
         if not game_name:
             raise ValueError("file-manifest.md is missing GAME_NAME")
-        if not content_root:
-            raise ValueError("file-manifest.md is missing CONTENT_ROOT")
         return cls(
             game_name=game_name,
             content_root=content_root,
@@ -51,7 +50,7 @@ class InitComplete:
     game_id: str
     play_mode: str = "player"
     player_character_mode: str = "original"
-    main_character: str = "entities/main_character.md"
+    main_character: str = "game:entities/main_character.md"
     world_consistency: str = "medium"
     initiative: str = "medium"
     language: str = "한국어"
@@ -100,13 +99,18 @@ class InitComplete:
             game_id=fields["game_id"],
             play_mode=fields.get("play_mode", "player"),
             player_character_mode=fields.get("player_character_mode", "original"),
-            main_character=fields.get("main_character", "entities/main_character.md"),
+            main_character=game_pointer(
+                fields.get("main_character", "game:entities/main_character.md")
+            ),
             world_consistency=fields.get("world_consistency", "medium"),
             initiative=fields.get("initiative", "medium"),
             language=fields.get("language", "한국어"),
             dev_commands=_parse_bool(fields.get("dev_commands", "false")),
             paused=_parse_bool(fields.get("paused", "false")),
-            current={key: fields.get(key, "") for key in current_keys},
+            current={
+                key: canonicalize_game_pointers(fields.get(key, ""))
+                for key in current_keys
+            },
             extra_fields={
                 key: value for key, value in fields.items() if key not in known
             },
@@ -129,7 +133,7 @@ class InitComplete:
             "- game_id: {}".format(self.game_id),
             "- play_mode: {}".format(self.play_mode),
             "- player_character_mode: {}".format(self.player_character_mode),
-            "- main_character: {}".format(self.main_character),
+            "- main_character: {}".format(game_pointer(self.main_character)),
             "- world_consistency: {}".format(self.world_consistency),
             "- initiative: {}".format(self.initiative),
             "- language: {}".format(self.language),
@@ -148,5 +152,10 @@ class InitComplete:
             "active_story",
             "relevant_flags",
         ):
-            lines.append("- {}: {}".format(key, self.current.get(key, "")))
+            lines.append(
+                "- {}: {}".format(
+                    key,
+                    canonicalize_game_pointers(self.current.get(key, "")),
+                )
+            )
         return "\n".join(lines) + "\n"

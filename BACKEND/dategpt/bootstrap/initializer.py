@@ -7,6 +7,7 @@ from typing import Dict, Optional, Sequence, Tuple
 
 from ..controls import ControlState
 from ..fs import RootedTextStore, safe_path_segment
+from ..pointers import game_path, game_pointer
 from ..scenarios import ScenarioPack
 from ..workspace import SessionWorkspace
 from .models import InitComplete, ScenarioManifest
@@ -159,7 +160,7 @@ class SessionInitializer:
             game_id=result.game_id,
             play_mode=play_mode,
             player_character_mode=player_character_mode,
-            main_character=main_character,
+            main_character=game_pointer(main_character),
             world_consistency=state.world_consistency,
             initiative=state.initiative,
             language=state.language,
@@ -257,13 +258,18 @@ class SessionInitializer:
         if (play_mode, player_character_mode) not in valid:
             raise ValueError("invalid play/player_character mode combination")
 
+        path = game_path(main_character)
+
         if player_character_mode == "original":
-            if main_character != "entities/main_character.md":
+            if path != "entities/main_character.md":
                 raise ValueError(
-                    "original player character must use entities/main_character.md"
+                    "original player character must use "
+                    "game:entities/main_character.md"
                 )
         elif player_character_mode == "existing":
-            if not main_character or main_character == "none":
-                raise ValueError("existing player character requires a source pointer")
-        elif main_character != "none":
+            if path is None or not path.startswith("entities/"):
+                raise ValueError(
+                    "existing player character requires a game:entities/... pointer"
+                )
+        elif str(main_character).strip().casefold() != "none":
             raise ValueError("observer mode must use main_character: none")
