@@ -232,6 +232,42 @@ class CartridgeTests(unittest.TestCase):
                     Path(tmp) / "installed"
                 ).inspect_directory(source)
 
+    def test_legacy_content_root_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "distribution"
+            write_datellm_distribution(source)
+            manifest_path = source / "file-manifest.md"
+            manifest_path.write_text(
+                manifest_path.read_text(encoding="utf-8").replace(
+                    "CONTENT_ROOT: .",
+                    "CONTENT_ROOT: datellm/distribution",
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError):
+                CartridgeLibrary(
+                    Path(tmp) / "installed"
+                ).inspect_directory(source)
+
+
+    def test_broken_context_manifest_core_file_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "distribution"
+            write_datellm_distribution(source)
+            (
+                source / "context_manifest.json"
+            ).write_text(
+                '{"core_files": ["entities/characters/없음.md"]}',
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(FileNotFoundError):
+                CartridgeLibrary(
+                    Path(tmp) / "installed"
+                ).inspect_directory(source)
+
+
 
 if __name__ == "__main__":
     unittest.main()

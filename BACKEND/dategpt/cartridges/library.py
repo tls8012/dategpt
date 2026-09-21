@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import uuid
@@ -67,6 +68,13 @@ class CartridgeLibrary:
                 "unsupported FORMAT_VERSION: {} (supported: {})".format(
                     manifest.format_version,
                     SUPPORTED_FORMAT_VERSION,
+                )
+            )
+
+        if manifest.content_root != ".":
+            raise ValueError(
+                "CONTENT_ROOT must be . for packaged cartridges; got: {}".format(
+                    manifest.content_root
                 )
             )
 
@@ -320,6 +328,31 @@ class CartridgeLibrary:
                     field_name=(
                         "character_manifest path for {}"
                     ).format(entry.name),
+                )
+
+        context_manifest = distribution / "context_manifest.json"
+        if context_manifest.is_file():
+            data = json.loads(
+                context_manifest.read_text(encoding="utf-8")
+            )
+            if not isinstance(data, dict):
+                raise ValueError(
+                    "context_manifest.json must contain an object"
+                )
+            core_files = data.get("core_files", [])
+            if not isinstance(core_files, list):
+                raise ValueError(
+                    "context_manifest.json core_files must be a list"
+                )
+            for value in core_files:
+                if not isinstance(value, str):
+                    raise ValueError(
+                        "context_manifest.json core_files entries must be strings"
+                    )
+                cls._require_distribution_file(
+                    distribution,
+                    value,
+                    field_name="context_manifest core_files",
                 )
 
     @staticmethod
