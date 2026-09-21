@@ -360,7 +360,7 @@ class ProtocolTests(unittest.TestCase):
             statuses = []
             reply = app.handle(
                 {
-                    "type": "say",
+                    "type": "play",
                     "request_id": "2",
                     "text": "어떤 캐릭터를 만들 수 있어?",
                 },
@@ -381,7 +381,7 @@ class ProtocolTests(unittest.TestCase):
             app, _, _, _ = self.make_open_app(base)
 
             selected = app.handle({
-                "type": "say",
+                "type": "play",
                 "request_id": "2",
                 "text": "!새캐릭터",
             })
@@ -391,7 +391,7 @@ class ProtocolTests(unittest.TestCase):
             )
 
             missing = app.handle({
-                "type": "say",
+                "type": "play",
                 "request_id": "3",
                 "text": "!캐릭터확정",
             })
@@ -406,7 +406,7 @@ class ProtocolTests(unittest.TestCase):
             )
 
             completed = app.handle({
-                "type": "say",
+                "type": "play",
                 "request_id": "4",
                 "text": "!캐릭터확정",
             })
@@ -900,7 +900,7 @@ class ProtocolTests(unittest.TestCase):
             app = self.make_app(base)
 
             result = app.handle({
-                "type": "say",
+                "type": "play",
                 "request_id": "m1",
                 "text": "!모델 anthropic claude-test",
             })
