@@ -53,10 +53,23 @@ backend virtual environment.
 - toggleable backend debug dock
 - QProcess signal-based backend transport
 - sparse turn journal with rollback/edit/regenerate
+- structured narration/dialogue/system presentation
+- Space-based sentence paging
+- resume-time restoration of the latest conversation presentation
+- Help and Continue actions without typing commands
+- on-demand Enter input panel
+- language / initiative / world consistency settings
+- dialogue overlay inside the stage/background area
+
+Keyboard interaction in the game page:
+
+- Space: advance to the next structured presentation segment
+- Enter: open the free-text input panel
+- Ctrl+Enter: send free-text input
+- Escape: close the input panel
 
 Not implemented yet:
 
-- structured speaker/narration output
-- 2-3 line dialogue paging/streaming
-- cartridge asset rendering
+- true provider token-latency streaming while structured output is still being generated
+- cartridge asset/background rendering
 - rich existing-character picker
