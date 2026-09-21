@@ -21,7 +21,11 @@ def write_datellm_distribution(
         "GAME_NAME: datellm\n"
         "BUILD_VERSION: {}\n"
         "FORMAT_VERSION: {}\n"
-        "CONTENT_ROOT: datellm/distribution\n".format(
+        "CONTENT_ROOT: .\n"
+        "character_manifest: character_manifest.md\n"
+        "welcome: story/welcome.md\n"
+        "story_manifest: story/story_manifest.md\n"
+        "start_story: story/전학 첫날.md\n".format(
             build_version,
             format_version,
         ),
