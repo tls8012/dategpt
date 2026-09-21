@@ -803,6 +803,13 @@ class ProtocolTests(unittest.TestCase):
                 "unspecified",
             )
 
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+
             changed = app.handle({
                 "type": "set_controls",
                 "controls": {
