@@ -14,6 +14,21 @@ _CORE_CONTROL_NAMES = {
     "paused",
 }
 
+_RESERVED_CONTROL_NAMES = _CORE_CONTROL_NAMES | {
+    "game_name",
+    "game_id",
+    "game_source",
+    "play_mode",
+    "player_character_mode",
+    "main_character",
+    "location",
+    "time",
+    "scene",
+    "present_entities",
+    "active_story",
+    "relevant_flags",
+}
+
 
 def _parse_bool(value: str, default: bool = False) -> bool:
     normalized = str(value).strip().casefold()
@@ -48,7 +63,7 @@ class ScenarioManifest:
             if not key.startswith("control."):
                 continue
             name = key[len("control."):].strip()
-            if not name or name in _CORE_CONTROL_NAMES:
+            if not name or name in _RESERVED_CONTROL_NAMES:
                 continue
             control_defaults[name] = str(value).strip()
 
