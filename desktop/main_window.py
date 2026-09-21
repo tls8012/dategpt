@@ -1389,6 +1389,11 @@ class MainWindow(QMainWindow):
                     )
                 self.game.set_waiting(False)
                 self.game.set_status("")
+                if (
+                    kind == "play"
+                    and self.turn_history_dialog.isVisible()
+                ):
+                    self.refresh_turns()
             else:
                 self.statusBar().showMessage(text)
             self._finish_request(request_id)
@@ -1405,6 +1410,17 @@ class MainWindow(QMainWindow):
                 self.settings_dialog.set_status(
                     rendered
                 )
+            elif kind in {
+                "turn_list",
+                "turn_rollback",
+                "turn_edit",
+                "turn_regenerate",
+            }:
+                self.turn_history_dialog.set_status(
+                    rendered
+                )
+                self.game.set_waiting(False)
+                self.game.set_status(rendered)
             elif self.stack.currentWidget() is self.game:
                 self.game.set_waiting(False)
                 self.game.set_status(rendered)
