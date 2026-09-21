@@ -38,6 +38,3 @@ release/
 # IDE
 .idea/
 .vscode/
-
-# PySide desktop virtualenv
-.venv-desktop/
