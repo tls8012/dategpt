@@ -15,7 +15,7 @@ from dategpt.scenarios import ScenarioPack
 from dategpt.workspace import SessionWorkspace
 
 
-def make_scenario(root: Path, game_name="테스트게임", content_root="content/"):
+def make_scenario(root: Path, game_name="테스트게임", content_root="."):
     root.mkdir(parents=True, exist_ok=True)
     (root / "file-manifest.md").write_text(
         "# FILE MANIFEST\n\n"
@@ -199,6 +199,46 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(resumed.controls.language, "English")
             self.assertTrue(resumed.controls.dev_commands)
             self.assertEqual(resumed.init_complete.current["location"], "station")
+
+    def test_initializer_migrates_legacy_init_paths_on_resume(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            scenario_root = base / "scenario"
+            make_scenario(scenario_root)
+
+            initializer = SessionInitializer(
+                save_base=base / "games",
+                runtime_base=base / "runtime",
+            )
+            first = initializer.prepare(
+                ScenarioPack(scenario_root),
+            )
+            legacy = (
+                "# INIT COMPLETE\n\n"
+                "- game_name: 테스트게임\n"
+                "- game_id: {}\n"
+                "- play_mode: observer\n"
+                "- player_character_mode: none\n"
+                "- main_character: none\n"
+                "- active_story: story/전학 첫날.md\n"
+            ).format(first.game_id)
+            first.workspace.save.write_text(
+                "init완료.md",
+                legacy,
+            )
+
+            resumed = initializer.prepare(
+                ScenarioPack(scenario_root),
+            )
+
+            self.assertEqual(
+                resumed.init_complete.current["active_story"],
+                "game:story/전학 첫날.md",
+            )
+            self.assertIn(
+                "active_story: game:story/전학 첫날.md",
+                resumed.workspace.save.read_text("init완료.md"),
+            )
 
     def test_initializer_requires_choice_for_multiple_instances(self):
         with tempfile.TemporaryDirectory() as tmp:

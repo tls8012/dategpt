@@ -108,13 +108,23 @@ class SessionInitializer:
 
         init_complete = None
         if workspace.save.exists("init완료.md"):
+            init_text = workspace.save.read_text(
+                "init완료.md"
+            )
             init_complete = InitComplete.parse(
-                workspace.save.read_text("init완료.md")
+                init_text
             )
             if init_complete.game_name != game_name:
                 raise ValueError("init완료.md game_name does not match scenario")
             if init_complete.game_id != game_id:
                 raise ValueError("init완료.md game_id does not match directory")
+
+            canonical_init = init_complete.render()
+            if canonical_init != init_text:
+                workspace.save.write_text(
+                    "init완료.md",
+                    canonical_init,
+                )
 
         controls = self._restore_controls(workspace, init_complete)
 
