@@ -37,6 +37,25 @@ def parse_markdown_fields(text: str) -> Dict[str, str]:
 
         key, value = payload.split(":", 1)
         key = key.strip()
+        if (
+            len(key) >= 4
+            and key.startswith("**")
+            and key.endswith("**")
+        ):
+            key = key[2:-2].strip()
+        elif (
+            len(key) >= 2
+            and key.startswith("*")
+            and key.endswith("*")
+        ):
+            key = key[1:-1].strip()
+        elif (
+            len(key) >= 2
+            and key.startswith("_")
+            and key.endswith("_")
+        ):
+            key = key[1:-1].strip()
+
         if key:
             values[key] = value.strip()
 
