@@ -20,11 +20,6 @@ saves/
 user_data/
 BACKEND/user_data/
 
-# Ren'Py generated/cache
-cache/
-saves/
-*.rpyc
-
 # Build output
 dist/
 build/
