@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
+from ..workspace import TurnTransaction
+
 from ..host import RuntimeHost, TurnContext
 from .filesystem import AgentFilesystem
 from .tools import (
@@ -62,15 +64,28 @@ class AgentRunner:
         *,
         history_limit: int = 20,
     ) -> AgentRunResult:
-        turn = self.host.begin_turn(
-            user_input,
-            history_limit=history_limit,
+        if self.host.workspace is None:
+            raise RuntimeError(
+                "session workspace is not mounted"
+            )
+        transaction = (
+            self.host.workspace.turns.begin()
         )
-        return self.run_context(
-            turn,
-            record_history=True,
-            tool_factory=self.tool_factory,
-        )
+        try:
+            turn = self.host.begin_turn(
+                user_input,
+                history_limit=history_limit,
+            )
+            return self.run_context(
+                turn,
+                record_history=True,
+                tool_factory=self.tool_factory,
+                transaction=transaction,
+                transaction_mode="turn",
+            )
+        except Exception:
+            transaction.rollback_uncommitted()
+            raise
 
     def run_onboarding_turn(
         self,
@@ -101,15 +116,28 @@ class AgentRunner:
         *,
         history_limit: int = 20,
     ) -> AgentRunResult:
-        turn = self.host.begin_turn(
-            instruction,
-            history_limit=history_limit,
+        if self.host.workspace is None:
+            raise RuntimeError(
+                "session workspace is not mounted"
+            )
+        transaction = (
+            self.host.workspace.turns.begin()
         )
-        return self.run_context(
-            turn,
-            record_history=False,
-            tool_factory=self.tool_factory,
-        )
+        try:
+            turn = self.host.begin_turn(
+                instruction,
+                history_limit=history_limit,
+            )
+            return self.run_context(
+                turn,
+                record_history=False,
+                tool_factory=self.tool_factory,
+                transaction=transaction,
+                transaction_mode="amend",
+            )
+        except Exception:
+            transaction.rollback_uncommitted()
+            raise
 
     def run_context(
         self,
@@ -117,6 +145,8 @@ class AgentRunner:
         *,
         record_history: bool,
         tool_factory,
+        transaction: Optional[TurnTransaction] = None,
+        transaction_mode: Optional[str] = None,
     ) -> AgentRunResult:
         if self.host.scenario is None:
             raise RuntimeError(
@@ -130,6 +160,7 @@ class AgentRunner:
         filesystem = AgentFilesystem(
             scenario=self.host.scenario,
             workspace=self.host.workspace,
+            transaction=transaction,
         )
         tools = tool_factory(filesystem)
         model = (
@@ -155,6 +186,22 @@ class AgentRunner:
                 turn,
                 text,
             )
+
+        if transaction is not None:
+            if transaction_mode == "turn":
+                transaction.commit(
+                    user_text=turn.user_input,
+                    assistant_text=text,
+                    prompt_fingerprint=(
+                        turn.prompt_fingerprint
+                    ),
+                )
+            elif transaction_mode == "amend":
+                transaction.amend_latest()
+            else:
+                raise ValueError(
+                    "invalid transaction_mode"
+                )
 
         return AgentRunResult(
             text=text,
