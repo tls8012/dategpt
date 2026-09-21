@@ -16,9 +16,9 @@ class ControlResponse:
 class ControlRouter:
     """Handles deterministic engine controls before an LLM call.
 
-    Text commands are only a compatibility adapter for the current Ren'Py UI.
-    The canonical interface is structured set_control / get_controls messages,
-    so later buttons can bypass command parsing entirely.
+    Structured set_control / get_controls messages are the canonical UI
+    interface. Text commands are accepted through normal desktop play input
+    and are handled before an LLM call.
     """
 
     def __init__(
@@ -83,7 +83,7 @@ class ControlRouter:
         if message_type == "help":
             return self._ok(self.render_help())
 
-        if message_type == "say":
+        if message_type == "play":
             return self.try_handle_text(str(message.get("text", "")))
 
         return ControlResponse(False)
