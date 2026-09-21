@@ -74,7 +74,35 @@ class AgentFilesystem:
     # ------------------------------------------------------------------
 
     def save_read(self, path: str) -> str:
-        return self.workspace.save.read_text(path)
+        """Read the effective authored+Save view for one public path.
+
+        Save is an overlay, not a complete copy of Distribution. A missing
+        Save file therefore falls back to the mounted scenario. When both
+        layers exist, return both so the agent can apply the newer overlay on
+        top of the authored baseline instead of accidentally replacing it.
+        """
+        source_exists = self.scenario.exists(path)
+        save_exists = self.workspace.save.exists(path)
+
+        if not source_exists and not save_exists:
+            raise FileNotFoundError(path)
+
+        chunks = []
+        if source_exists:
+            chunks.append(
+                "## SOURCE: {}\n{}".format(
+                    path,
+                    self.scenario.read_text(path),
+                )
+            )
+        if save_exists:
+            chunks.append(
+                "## SAVE OVERLAY: {}\n{}".format(
+                    path,
+                    self.workspace.save.read_text(path),
+                )
+            )
+        return "\n\n".join(chunks)
 
     def save_list(self, path: str = ".") -> List[str]:
         return self.workspace.save.list_files(path)
