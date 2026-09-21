@@ -31,6 +31,14 @@ class VNLine(BaseModel):
             "Do not include a 'Speaker:' prefix."
         ),
     )
+    assets: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Zero or more registered asset IDs to display with this unit. "
+            "Use only asset IDs explicitly available in the current game "
+            "context; never invent file paths or URLs."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_speaker(self):
@@ -43,13 +51,24 @@ class VNLine(BaseModel):
             )
         if self.kind != "dialogue":
             self.speaker = ""
+
+        normalized_assets = []
+        seen_assets = set()
+        for asset_id in self.assets:
+            value = str(asset_id).strip()
+            if not value or value in seen_assets:
+                continue
+            normalized_assets.append(value)
+            seen_assets.add(value)
+        self.assets = normalized_assets
         return self
 
-    def public_dict(self) -> Dict[str, str]:
+    def public_dict(self) -> Dict[str, object]:
         return {
             "kind": self.kind,
             "speaker": self.speaker,
             "text": self.text,
+            "assets": list(self.assets),
         }
 
 
@@ -79,7 +98,7 @@ class VNResponse(BaseModel):
                 lines.append(segment.text)
         return "\n".join(lines).strip()
 
-    def public_segments(self) -> List[Dict[str, str]]:
+    def public_segments(self) -> List[Dict[str, object]]:
         return [
             segment.public_dict()
             for segment in self.segments
