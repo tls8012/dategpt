@@ -24,3 +24,11 @@ jobs:
       - name: Compile desktop frontend
         working-directory: .
         run: python -m py_compile desktop/*.py
+      - name: Install desktop dependency
+        working-directory: .
+        run: python -m pip install -r desktop/requirements.txt
+      - name: Smoke test PySide frontend
+        working-directory: .
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python desktop/smoke_test.py
