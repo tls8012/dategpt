@@ -870,12 +870,14 @@ class SettingsDialog(QDialog):
     model_requested = Signal(str, str)
     api_key_requested = Signal(str, str)
     api_key_clear_requested = Signal(str)
+    controls_requested = Signal(object)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("DateGPT 설정")
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(560)
         self._snapshot: Dict[str, Any] = {}
+        self._controls: Dict[str, Any] = {}
 
         root = QVBoxLayout(self)
         form = QFormLayout()
@@ -892,10 +894,29 @@ class SettingsDialog(QDialog):
         self.api_status = QLabel("미설정")
         self.api_status.setObjectName("Muted")
 
+        self.language_edit = QLineEdit()
+        self.language_edit.setPlaceholderText(
+            "예: 한국어, English, 日本語"
+        )
+        self.initiative_combo = QComboBox()
+        self.initiative_combo.addItems(
+            ["low", "medium", "high"]
+        )
+        self.consistency_combo = QComboBox()
+        self.consistency_combo.addItems(
+            ["low", "medium", "high"]
+        )
+
         form.addRow("모델 제공사", self.provider_combo)
         form.addRow("모델", self.model_edit)
         form.addRow("API key", self.api_key_edit)
         form.addRow("", self.api_status)
+        form.addRow("언어", self.language_edit)
+        form.addRow("적극성", self.initiative_combo)
+        form.addRow(
+            "정합성",
+            self.consistency_combo,
+        )
         root.addLayout(form)
 
         buttons = QHBoxLayout()
@@ -903,11 +924,14 @@ class SettingsDialog(QDialog):
         self.model_button = QPushButton("모델 저장")
         self.key_button = QPushButton("API key 저장")
         self.clear_key_button = QPushButton("API key 삭제")
+        self.controls_button = QPushButton("게임 설정 저장")
+        self.controls_button.setObjectName("Primary")
         buttons.addWidget(self.refresh_button)
         buttons.addStretch(1)
         buttons.addWidget(self.model_button)
         buttons.addWidget(self.key_button)
         buttons.addWidget(self.clear_key_button)
+        buttons.addWidget(self.controls_button)
         root.addLayout(buttons)
 
         self.status_label = QLabel("")
@@ -926,6 +950,9 @@ class SettingsDialog(QDialog):
         )
         self.clear_key_button.clicked.connect(
             self._emit_clear_key
+        )
+        self.controls_button.clicked.connect(
+            self._emit_controls
         )
         self.provider_combo.currentTextChanged.connect(
             self._update_api_status
@@ -961,6 +988,35 @@ class SettingsDialog(QDialog):
         )
         self.api_key_edit.clear()
         self._update_api_status()
+
+    def apply_controls(
+        self,
+        controls: Dict[str, Any],
+    ) -> None:
+        if not isinstance(controls, dict):
+            return
+        self._controls = dict(controls)
+        self.language_edit.setText(
+            str(controls.get("language", "한국어"))
+        )
+        self._set_combo_value(
+            self.initiative_combo,
+            str(
+                controls.get(
+                    "initiative",
+                    "medium",
+                )
+            ),
+        )
+        self._set_combo_value(
+            self.consistency_combo,
+            str(
+                controls.get(
+                    "world_consistency",
+                    "medium",
+                )
+            ),
+        )
 
     def set_status(self, text: str) -> None:
         self.status_label.setText(text)
@@ -1003,6 +1059,32 @@ class SettingsDialog(QDialog):
         self.api_key_clear_requested.emit(
             self.provider_combo.currentText()
         )
+
+    def _emit_controls(self) -> None:
+        language = self.language_edit.text().strip()
+        if not language:
+            self.set_status("언어를 입력하세요.")
+            return
+        self.controls_requested.emit(
+            {
+                "language": language,
+                "initiative": (
+                    self.initiative_combo.currentText()
+                ),
+                "world_consistency": (
+                    self.consistency_combo.currentText()
+                ),
+            }
+        )
+
+    @staticmethod
+    def _set_combo_value(
+        combo: QComboBox,
+        value: str,
+    ) -> None:
+        index = combo.findText(value)
+        if index >= 0:
+            combo.setCurrentIndex(index)
 
 
 class MainWindow(QMainWindow):
