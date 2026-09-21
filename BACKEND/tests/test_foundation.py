@@ -19,7 +19,11 @@ def make_scenario(root: Path, game_name="테스트게임", content_root="content
     (root / "file-manifest.md").write_text(
         "# FILE MANIFEST\n\n"
         "- `GAME_NAME: {}`\n"
-        "- `CONTENT_ROOT: {}`\n".format(game_name, content_root),
+        "- `CONTENT_ROOT: {}`\n"
+        "- `control.gender: unspecified`\n".format(
+            game_name,
+            content_root,
+        ),
         encoding="utf-8",
     )
     (root / "character_manifest.md").write_text(
@@ -198,6 +202,14 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(resumed.controls.world_consistency, "low")
             self.assertEqual(resumed.controls.language, "English")
             self.assertTrue(resumed.controls.dev_commands)
+            self.assertEqual(
+                resumed.controls.extra["gender"],
+                "unspecified",
+            )
+            self.assertEqual(
+                resumed.init_complete.extra_fields["gender"],
+                "unspecified",
+            )
             self.assertEqual(resumed.init_complete.current["location"], "station")
 
     def test_initializer_requires_choice_for_multiple_instances(self):
