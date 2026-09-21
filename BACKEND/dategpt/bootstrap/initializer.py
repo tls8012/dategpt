@@ -176,6 +176,11 @@ class SessionInitializer:
         result.controls = state
         return init_complete
 
+    def list_instance_ids(self, game_name: str):
+        """Return existing save instance ids without opening or creating one."""
+        safe_game_name = safe_path_segment(game_name, "GAME_NAME")
+        return tuple(self._list_instance_ids(safe_game_name))
+
     def _list_instance_ids(self, game_name: str):
         game_root = self.registry.resolve(game_name)
         if not game_root.exists():
