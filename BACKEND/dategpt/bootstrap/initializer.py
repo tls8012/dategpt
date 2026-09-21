@@ -9,6 +9,7 @@ from ..controls import ControlState
 from ..fs import RootedTextStore, safe_path_segment
 from ..scenarios import ScenarioPack
 from ..workspace import SessionWorkspace
+from .markdown import parse_markdown_fields
 from .models import InitComplete, ScenarioManifest
 
 
@@ -107,9 +108,29 @@ class SessionInitializer:
 
         init_complete = None
         if workspace.save.exists("init완료.md"):
-            init_complete = InitComplete.parse(
-                workspace.save.read_text("init완료.md")
+            init_path = workspace.save.resolve(
+                "init완료.md"
             )
+            init_text = workspace.save.read_text(
+                "init완료.md"
+            )
+            try:
+                init_complete = InitComplete.parse(
+                    init_text
+                )
+            except ValueError as exc:
+                parsed_keys = sorted(
+                    parse_markdown_fields(
+                        init_text
+                    ).keys()
+                )
+                raise ValueError(
+                    "{} [path={}, parsed_keys={}]".format(
+                        exc,
+                        init_path,
+                        parsed_keys,
+                    )
+                ) from exc
             if init_complete.game_name != game_name:
                 raise ValueError("init완료.md game_name does not match scenario")
             if init_complete.game_id != game_id:
