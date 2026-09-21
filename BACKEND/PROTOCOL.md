@@ -60,7 +60,7 @@ Other text received while needs_setup=true is routed to onboarding_turn.
 The engine uses a hybrid context strategy:
 
 1. stable core context
-2. exact current-state context
+2. exact deterministic indexes/pointers
 3. agent retrieval tools
 
 An optional scenario context_manifest.json can declare authored files that are
@@ -78,11 +78,37 @@ always included after runtime.md and before mutable controls:
 Those source baselines stay in the cache-friendly system prefix. Save overlays
 for the same paths remain dynamic.
 
-When exact paths are known, the engine also preloads the player character,
-current scene entity/story/flag/asset files, their Save overlays, scratchpad
-working memory, and recent conversation. Everything else is retrieved through
-content tools. Vector RAG is deliberately deferred; it can later replace or
-augment lexical search behind the same retrieval boundary.
+### Character manifest index
+
+Distribution character_manifest.md is parsed as a deterministic public index.
+The existing line format is used directly:
+
+```text
+- 이름 | aliases: 별명1, 별명2 | roles: 직책1, 직책2 | path: entities/characters/...
+```
+
+The Save character_manifest.md is applied as a newer overlay by exact entity
+path. Name, alias, and role labels are normalized for exact matching only; this
+is not fuzzy or semantic search.
+
+When init완료.md Current.present_entities contains names such as:
+
+```text
+설연, 남궁휘
+```
+
+the engine resolves each unique exact public match and preloads its Distribution
+source plus Save entity overlay. Aliases and exact role labels work the same way.
+If a public key points to multiple characters, the engine does not guess and
+leaves retrieval to the Agent.
+
+The engine also preloads exact non-hidden entity/story/flag/asset paths already
+present in Current, the player character, scratchpad working memory, and recent
+conversation.
+
+Everything else remains available through content tools. Vector RAG is
+deliberately deferred; it can later replace or augment lexical search behind the
+same retrieval boundary.
 
 ## Gameplay
 

@@ -26,6 +26,10 @@ class ContextBuilderTests(unittest.TestCase):
                 "HEROINE SOURCE",
                 encoding="utf-8",
             )
+            (scenario_root / "entities" / "characters" / "seol.md").write_text(
+                "SEOL SOURCE",
+                encoding="utf-8",
+            )
             (scenario_root / "entities" / "locations" / "station.md").write_text(
                 "STATION SOURCE",
                 encoding="utf-8",
@@ -40,6 +44,15 @@ class ContextBuilderTests(unittest.TestCase):
                         "entities/characters/heroine.md"
                     ]
                 }),
+                encoding="utf-8",
+            )
+            (scenario_root / "character_manifest.md").write_text(
+                (
+                    "# CHARACTER MANIFEST\n"
+                    "- 설연 | aliases: 달마대사의 재림 | "
+                    "roles: 청하문 장문인의 딸 | "
+                    "path: entities/characters/seol.md\n"
+                ),
                 encoding="utf-8",
             )
 
@@ -57,6 +70,18 @@ class ContextBuilderTests(unittest.TestCase):
                 "entities/characters/heroine.md",
                 "HEROINE OVERLAY",
             )
+            workspace.save.write_text(
+                "entities/characters/seol.md",
+                "SEOL OVERLAY",
+            )
+            workspace.save.write_text(
+                "character_manifest.md",
+                (
+                    "# CHARACTER MANIFEST\n"
+                    "- 설연 | aliases: 소연 | "
+                    "path: entities/characters/seol.md\n"
+                ),
+            )
             workspace.scratchpad.write_text(
                 "current.md",
                 "NEWER SESSION STATE",
@@ -69,9 +94,7 @@ class ContextBuilderTests(unittest.TestCase):
                 current={
                     "location": "entities/locations/station.md",
                     "scene": "",
-                    "present_entities": (
-                        "entities/characters/heroine.md"
-                    ),
+                    "present_entities": "소연",
                     "active_story": "",
                     "relevant_flags": "",
                 },
@@ -95,12 +118,69 @@ class ContextBuilderTests(unittest.TestCase):
             self.assertIn("PLAYER SAVE", dynamic)
             self.assertIn("HEROINE OVERLAY", dynamic)
             self.assertIn("STATION SOURCE", dynamic)
+            self.assertIn("SEOL SOURCE", dynamic)
+            self.assertIn("SEOL OVERLAY", dynamic)
             self.assertIn("NEWER SESSION STATE", dynamic)
             self.assertNotIn("SECRET PAYLOAD", dynamic)
             self.assertNotIn(
                 "SECRET PAYLOAD",
                 material.stable_context,
             )
+
+    def test_ambiguous_present_entity_is_not_preloaded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            scenario_root = base / "scenario"
+            (scenario_root / "entities" / "characters").mkdir(
+                parents=True
+            )
+            (scenario_root / "entities" / "characters" / "a.md").write_text(
+                "CHARACTER A",
+                encoding="utf-8",
+            )
+            (scenario_root / "entities" / "characters" / "b.md").write_text(
+                "CHARACTER B",
+                encoding="utf-8",
+            )
+            (scenario_root / "character_manifest.md").write_text(
+                (
+                    "- A | aliases: 검마 | "
+                    "path: entities/characters/a.md\n"
+                    "- B | aliases: 검마 | "
+                    "path: entities/characters/b.md\n"
+                ),
+                encoding="utf-8",
+            )
+
+            workspace = SessionWorkspace.open(
+                save_base=base / "games",
+                runtime_base=base / "runtime",
+                game_name="game",
+                game_id="id",
+            )
+            init_complete = InitComplete(
+                game_name="game",
+                game_id="id",
+                main_character="none",
+                player_character_mode="none",
+                play_mode="observer",
+                current={
+                    "present_entities": "검마",
+                },
+            )
+
+            material = ContextBuilder(
+                scenario=ScenarioPack(scenario_root),
+                workspace=workspace,
+                init_complete=init_complete,
+            ).build_gameplay()
+            dynamic = "\n".join(
+                message["content"]
+                for message in material.dynamic_messages
+            )
+
+            self.assertNotIn("CHARACTER A", dynamic)
+            self.assertNotIn("CHARACTER B", dynamic)
 
     def test_onboarding_loads_welcome_public_index_and_draft(self):
         with tempfile.TemporaryDirectory() as tmp:

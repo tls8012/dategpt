@@ -6,13 +6,14 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from ..bootstrap.models import InitComplete
-from ..scenarios import ScenarioPack
+from ..scenarios import CharacterManifestIndex, ScenarioPack
 from ..workspace import SessionWorkspace
 
 
 _POINTER_RE = re.compile(
     r"(?:(?:entities|story|flags|assets)/[^\s,;|\]\)]+)"
 )
+_ENTITY_SPLIT_RE = re.compile(r"[,;|\n、]+")
 
 
 @dataclass(frozen=True)
@@ -30,7 +31,7 @@ class ContextMaterial:
 
 
 class ContextBuilder:
-    """Hybrid context assembly: exact pointers first, search only when needed."""
+    """Hybrid context assembly: exact indexes first, search only when needed."""
 
     def __init__(
         self,
@@ -62,19 +63,52 @@ class ContextBuilder:
                 self._current_state_block(self.init_complete)
             )
 
+            player_paths = self._player_paths(
+                self.init_complete
+            )
             player_block = self._player_context_block(
                 self.init_complete
             )
             if player_block:
                 blocks.append(player_block)
 
-            pointer_block = self._scene_pointer_block(
+            pointer_paths = self._current_pointer_paths(
                 self.init_complete,
-                exclude=set(core_files)
-                | self._player_paths(self.init_complete),
+                exclude=set(core_files) | player_paths,
+            )
+            pointer_block = self._paths_context_block(
+                pointer_paths,
+                heading="EXACT CURRENT-SCENE MATERIAL",
+                description=(
+                    "Loaded because the current Save points to "
+                    "these exact files."
+                ),
             )
             if pointer_block:
                 blocks.append(pointer_block)
+
+            character_paths = (
+                self._resolved_scene_character_paths(
+                    self.init_complete,
+                    exclude=(
+                        set(core_files)
+                        | player_paths
+                        | set(pointer_paths)
+                    ),
+                )
+            )
+            character_block = self._paths_context_block(
+                character_paths,
+                heading=(
+                    "RESOLVED CURRENT-SCENE CHARACTERS"
+                ),
+                description=(
+                    "Loaded from unique exact matches in the "
+                    "Distribution/Save public character index."
+                ),
+            )
+            if character_block:
+                blocks.append(character_block)
 
         overlay_block = self._core_overlay_block(core_files)
         if overlay_block:
@@ -144,6 +178,65 @@ class ContextBuilder:
             dynamic_messages=_as_system_messages(blocks),
             core_files=tuple(core_files),
         )
+
+    def _character_index(
+        self,
+    ) -> CharacterManifestIndex:
+        distribution_text = ""
+        save_text = ""
+
+        if self.scenario.exists(
+            "character_manifest.md"
+        ):
+            distribution_text = self.scenario.read_text(
+                "character_manifest.md"
+            )
+
+        if self.workspace.save.exists(
+            "character_manifest.md"
+        ):
+            save_text = self.workspace.save.read_text(
+                "character_manifest.md"
+            )
+
+        return CharacterManifestIndex.from_texts(
+            distribution_text=distribution_text,
+            save_text=save_text,
+        )
+
+    def _resolved_scene_character_paths(
+        self,
+        init_complete: InitComplete,
+        *,
+        exclude: set,
+    ) -> Tuple[str, ...]:
+        value = init_complete.current.get(
+            "present_entities",
+            "",
+        )
+        if not value:
+            return ()
+
+        index = self._character_index()
+        paths = []
+        seen = set(exclude)
+
+        for name in _extract_entity_names(value):
+            record = index.resolve_unique(name)
+            if record is None:
+                continue
+            if record.path in seen:
+                continue
+            if not (
+                self.scenario.exists(record.path)
+                or self.workspace.save.exists(record.path)
+            ):
+                continue
+
+            seen.add(record.path)
+            paths.append(record.path)
+
+        return tuple(paths)
 
     def _core_files(self) -> List[str]:
         if not self.scenario.exists(self.context_manifest_name):
@@ -288,18 +381,17 @@ class ContextBuilder:
                 )
             )
 
-        # Original player characters conventionally live only in Save.
         if len(chunks) == 1:
             return ""
 
         return "\n\n".join(chunks)
 
-    def _scene_pointer_block(
+    def _current_pointer_paths(
         self,
         init_complete: InitComplete,
         *,
         exclude: set,
-    ) -> str:
+    ) -> Tuple[str, ...]:
         paths = []
         seen = set(exclude)
 
@@ -314,7 +406,17 @@ class ContextBuilder:
                     paths.append(path)
                     seen.add(path)
 
+        return tuple(paths)
+
+    def _paths_context_block(
+        self,
+        paths: Sequence[str],
+        *,
+        heading: str,
+        description: str,
+    ) -> str:
         chunks = []
+
         for path in paths:
             if self.scenario.exists(path):
                 chunks.append(
@@ -335,10 +437,11 @@ class ContextBuilder:
             return ""
 
         return (
-            "# EXACT CURRENT-SCENE MATERIAL\n"
-            "Loaded because the current Save points to these exact files."
-            "\n\n"
-            + "\n\n".join(chunks)
+            "# {}\n{}\n\n{}".format(
+                heading,
+                description,
+                "\n\n".join(chunks),
+            )
         )
 
     def _scratchpad_block(
@@ -385,6 +488,38 @@ def _extract_pointers(value: object) -> Iterable[str]:
         match.group(0).rstrip(".:、。")
         for match in _POINTER_RE.finditer(value)
     )
+
+
+def _extract_entity_names(
+    value: object,
+) -> Tuple[str, ...]:
+    if not isinstance(value, str):
+        return ()
+
+    names = []
+    seen = set()
+
+    for raw in _ENTITY_SPLIT_RE.split(value):
+        text = raw.strip().strip(
+            "[](){}<>\"'"
+        )
+        if not text:
+            continue
+        if "/" in text or text.casefold() in {
+            "none",
+            "null",
+        }:
+            continue
+
+        normalized = " ".join(
+            text.casefold().split()
+        )
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        names.append(text)
+
+    return tuple(names)
 
 
 def _is_hidden(path: str) -> bool:
