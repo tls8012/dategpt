@@ -9,7 +9,7 @@ GAME_POINTER_PREFIX = "game:"
 _GAME_ROOTS = {"entities", "story", "flags", "assets"}
 _TEXT_POINTER_RE = re.compile(
     r"(?:(?:game:)?(?:entities|story|flags|assets)/"
-    r"[^\\n,;|\\]\\)]+?\\.(?:md|json|txt))",
+    r".+?\.(?:md|json|txt))",
     re.IGNORECASE,
 )
 
