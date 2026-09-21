@@ -158,6 +158,11 @@ class SessionInitializer:
         )
         state = controls or result.controls
 
+        extra_fields = dict(
+            result.manifest.control_defaults
+        )
+        extra_fields.update(state.extra)
+
         init_complete = InitComplete(
             game_name=result.game_name,
             game_id=result.game_id,
@@ -170,7 +175,7 @@ class SessionInitializer:
             dev_commands=state.dev_commands,
             paused=state.paused,
             current=dict(current or {}),
-            extra_fields=dict(state.extra),
+            extra_fields=extra_fields,
         )
         result.workspace.save.write_text(
             "init완료.md",
