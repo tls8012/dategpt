@@ -115,7 +115,11 @@ class SessionInitializer:
             if init_complete.game_id != game_id:
                 raise ValueError("init완료.md game_id does not match directory")
 
-        controls = self._restore_controls(workspace, init_complete)
+        controls = self._restore_controls(
+            workspace,
+            init_complete,
+            manifest,
+        )
 
         return InitializationResult(
             is_new=is_new,
@@ -166,6 +170,7 @@ class SessionInitializer:
             dev_commands=state.dev_commands,
             paused=state.paused,
             current=dict(current or {}),
+            extra_fields=dict(state.extra),
         )
         result.workspace.save.write_text(
             "init완료.md",
@@ -232,8 +237,10 @@ class SessionInitializer:
         self,
         workspace: SessionWorkspace,
         init_complete: Optional[InitComplete],
+        manifest: ScenarioManifest,
     ) -> ControlState:
-        values = {}
+        values = dict(manifest.control_defaults)
+
         if init_complete is not None:
             values.update(init_complete.control_values())
 
