@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from ..workspace import TurnTransaction
 
 from ..host import RuntimeHost, TurnContext
+from ..presentation import VNResponse, coerce_vn_response
 from .filesystem import AgentFilesystem
 from .tools import (
     build_langchain_tools,
@@ -18,6 +19,7 @@ class AgentRunResult:
     text: str
     prompt_fingerprint: str
     raw_result: Any
+    segments: Tuple[Dict[str, str], ...] = ()
 
 
 class AgentRunner:
@@ -82,6 +84,7 @@ class AgentRunner:
                 tool_factory=self.tool_factory,
                 transaction=transaction,
                 transaction_mode="turn",
+                structured_output=True,
             )
         except Exception:
             transaction.rollback_uncommitted()
@@ -108,6 +111,7 @@ class AgentRunner:
             tool_factory=(
                 self.onboarding_tool_factory
             ),
+            structured_output=True,
         )
 
     def run_maintenance(
@@ -134,6 +138,7 @@ class AgentRunner:
                 tool_factory=self.tool_factory,
                 transaction=transaction,
                 transaction_mode="amend",
+                structured_output=False,
             )
         except Exception:
             transaction.rollback_uncommitted()
@@ -147,6 +152,7 @@ class AgentRunner:
         tool_factory,
         transaction: Optional[TurnTransaction] = None,
         transaction_mode: Optional[str] = None,
+        structured_output: bool = False,
     ) -> AgentRunResult:
         if self.host.scenario is None:
             raise RuntimeError(
@@ -169,22 +175,38 @@ class AgentRunner:
             else self.model
         )
 
-        agent = self.agent_factory(
-            model=model,
-            tools=tools,
-            system_prompt=turn.system_prompt,
-        )
+        agent_kwargs = {
+            "model": model,
+            "tools": tools,
+            "system_prompt": turn.system_prompt,
+        }
+        if structured_output:
+            agent_kwargs["response_format"] = VNResponse
+
+        agent = self.agent_factory(**agent_kwargs)
 
         messages = _build_messages(turn)
         raw_result = agent.invoke(
             {"messages": messages}
         )
-        text = _extract_final_text(raw_result)
+
+        segments: Tuple[Dict[str, str], ...] = ()
+        if structured_output:
+            response = _extract_structured_response(
+                raw_result
+            )
+            text = response.plain_text()
+            segments = tuple(
+                response.public_segments()
+            )
+        else:
+            text = _extract_final_text(raw_result)
 
         if record_history:
             self._record_exchange(
                 turn,
                 text,
+                segments=segments,
             )
 
         if transaction is not None:
@@ -209,6 +231,7 @@ class AgentRunner:
                 turn.prompt_fingerprint
             ),
             raw_result=raw_result,
+            segments=segments,
         )
 
     def record_assistant_message(
@@ -233,6 +256,8 @@ class AgentRunner:
         self,
         turn: TurnContext,
         text: str,
+        *,
+        segments: Tuple[Dict[str, str], ...] = (),
     ) -> None:
         self.host.workspace.history.append(
             {
@@ -243,14 +268,19 @@ class AgentRunner:
                 ),
             }
         )
+        assistant_record = {
+            "role": "assistant",
+            "text": text,
+            "prompt_fingerprint": (
+                turn.prompt_fingerprint
+            ),
+        }
+        if segments:
+            assistant_record["segments"] = [
+                dict(item) for item in segments
+            ]
         self.host.workspace.history.append(
-            {
-                "role": "assistant",
-                "text": text,
-                "prompt_fingerprint": (
-                    turn.prompt_fingerprint
-                ),
-            }
+            assistant_record
         )
 
 
@@ -298,6 +328,25 @@ def _build_messages(
         }
     )
     return messages
+
+
+def _extract_structured_response(
+    result: Any,
+) -> VNResponse:
+    if not isinstance(result, dict):
+        raise RuntimeError(
+            "agent structured output state must be a mapping"
+        )
+
+    structured = result.get(
+        "structured_response"
+    )
+    if structured is None:
+        raise RuntimeError(
+            "agent returned no structured_response"
+        )
+
+    return coerce_vn_response(structured)
 
 
 def _extract_final_text(result: Any) -> str:
