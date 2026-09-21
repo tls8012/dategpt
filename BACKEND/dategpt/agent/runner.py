@@ -19,7 +19,7 @@ class AgentRunResult:
     text: str
     prompt_fingerprint: str
     raw_result: Any
-    segments: Tuple[Dict[str, str], ...] = ()
+    segments: Tuple[Dict[str, object], ...] = ()
 
 
 class AgentRunner:
@@ -240,7 +240,7 @@ class AgentRunner:
         *,
         prompt_fingerprint: str,
         phase: str,
-        segments: Tuple[Dict[str, str], ...] = (),
+        segments: Tuple[Dict[str, object], ...] = (),
     ) -> None:
         record = {
             "role": "assistant",
@@ -261,7 +261,7 @@ class AgentRunner:
         turn: TurnContext,
         text: str,
         *,
-        segments: Tuple[Dict[str, str], ...] = (),
+        segments: Tuple[Dict[str, object], ...] = (),
     ) -> None:
         self.host.workspace.history.append(
             {
