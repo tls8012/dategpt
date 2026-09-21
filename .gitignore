@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Backend virtualenv
+BACKEND/datevenv/
+.venv/
+venv/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Logs / runtime
+*.log
+logs/
+runtime/
+saves/
+
+# Ren'Py generated/cache
+cache/
+saves/
+*.rpyc
+
+# Build output
+dist/
+build/
+release/
+*.app
+*.exe
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
