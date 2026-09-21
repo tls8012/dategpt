@@ -800,6 +800,30 @@ class BackendApplication:
                 emit=emit,
             )
 
+        control_response = (
+            session.host.control_router.try_handle_text(
+                text
+            )
+        )
+        if control_response.handled:
+            events = []
+            if control_response.controls is not None:
+                events.append(
+                    _event(
+                        "control_state",
+                        request_id,
+                        controls=control_response.controls,
+                    )
+                )
+            events.append(
+                _event(
+                    "reply",
+                    request_id,
+                    text=control_response.message,
+                )
+            )
+            return events
+
         if emit is not None:
             emit(
                 _event(
