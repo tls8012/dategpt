@@ -27,7 +27,7 @@ class ControlState:
     world_consistency: str = "medium"
     dev_commands: bool = False
     paused: bool = False
-    extra: Dict[str, Any] = field(default_factory=dict)
+    extra: Dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, Any]) -> "ControlState":
@@ -55,7 +55,7 @@ class ControlState:
             setattr(self, name, _as_bool(value, name))
             return
 
-        self.extra[name] = value
+        self.extra[name] = str(value).strip()
 
     def snapshot(self) -> Dict[str, Any]:
         values = {
