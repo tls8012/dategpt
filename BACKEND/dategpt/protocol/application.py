@@ -91,14 +91,9 @@ class BackendApplication:
         self.sources = GitHubSourceResolver(
             self.source_cache_base
         )
-        self.default_prompt_source = os.environ.get(
-            "DATEGPT_PROMPT_SOURCE",
-            (
-                "https://github.com/"
-                "tls8012/chatgpt-animevisualnovel/"
-                "tree/main/scaffolding"
-            ),
-        ).strip()
+        self.bundled_prompt_dir = (
+            self.backend_dir.parent / ".scaffolding"
+        ).resolve()
 
         self.model_settings_store = (
             model_settings_store
@@ -921,39 +916,15 @@ class BackendApplication:
                 env_path
             ).expanduser().resolve()
 
-        source = str(
-            message.get(
-                "prompt_source",
-                self.default_prompt_source,
-            )
-        ).strip()
-        if not source:
-            raise ProtocolError(
-                "PATH_NOT_CONFIGURED",
-                (
-                    "prompt_path, DATEGPT_PROMPT_DIR 또는 "
-                    "DATEGPT_PROMPT_SOURCE 설정이 필요합니다."
-                ),
-            )
+        if self.bundled_prompt_dir.is_dir():
+            return self.bundled_prompt_dir
 
-        if not _is_github_url(source):
-            raise ProtocolError(
-                "INVALID_REQUEST",
-                "prompt_source는 github.com HTTPS URL이어야 합니다.",
-            )
-
-        if emit is not None:
-            emit(
-                _event(
-                    "status",
-                    request_id,
-                    message="공용 prompt scaffolding 동기화 중...",
-                )
-            )
-
-        return self.sources.materialize(
-            source,
-            refresh=True,
+        raise ProtocolError(
+            "PATH_NOT_CONFIGURED",
+            (
+                "prompt_path 또는 DATEGPT_PROMPT_DIR가 없고 "
+                "동기화된 .scaffolding 디렉터리도 없습니다."
+            ),
         )
 
     def _resolve_scenario_path(

@@ -455,6 +455,39 @@ class ProtocolTests(unittest.TestCase):
                 result[-1]["text"],
             )
 
+    def test_repo_scaffolding_is_default_prompt_bundle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            scenario = base / "scenario"
+            scaffolding = base / ".scaffolding"
+            write_scenario(scenario)
+            write_prompts(scaffolding)
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "DATEGPT_SAVE_DIR": str(base / "games"),
+                    "DATEGPT_RUNTIME_DIR": str(base / "runtime"),
+                    "DATEGPT_PROMPT_DIR": "",
+                },
+                clear=False,
+            ):
+                app = self.make_app(base)
+
+            opened = app.handle({
+                "type": "open_session",
+                "request_id": "local-prompts",
+                "scenario_path": str(scenario),
+            })
+            self.assertEqual(
+                opened[0]["type"],
+                "session_opened",
+            )
+            self.assertEqual(
+                app.active_session.host.prompt_bundle.root,
+                scaffolding.resolve(),
+            )
+
     def test_play_without_session_is_structured_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             app = self.make_app(Path(tmp))

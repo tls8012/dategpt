@@ -184,12 +184,13 @@ DateGPT does not store GitHub credentials. Private repositories work when normal
 command-line git access on the machine already works through the user's
 credential helper. Credentials embedded in URLs are rejected.
 
-If open_session does not receive prompt_path and DATEGPT_PROMPT_DIR is unset,
-the backend automatically materializes the shared prompt bundle from:
+Prompt scaffolding is not fetched at runtime. The source prompt repository
+syncs managed files into DateGPT's repository-level `.scaffolding/` directory
+through GitHub Actions. DateGPT resolves prompts in this order:
 
-```text
-https://github.com/tls8012/chatgpt-animevisualnovel/tree/main/scaffolding
-```
+1. explicit `prompt_path`
+2. `DATEGPT_PROMPT_DIR`
+3. repository `.scaffolding/`
 
-DATEGPT_PROMPT_SOURCE can override that GitHub source. A local
-DATEGPT_PROMPT_DIR still takes precedence.
+The managed DateGPT copy currently contains only `runtime.md` and
+`onboarding.md`.

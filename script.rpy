@@ -183,7 +183,7 @@ label dategpt_open_session:
 
     if backend_session.get("needs_setup", False):
         "새 게임 온보딩 상태다."
-        "공용 scaffolding은 원본 prompt repo에서 자동으로 동기화된다."
+        "공용 runtime/onboarding은 repo의 .scaffolding 동기화본을 사용한다."
         "먼저 모델/API 키를 설정해도 되고, 바로 대화를 시작해도 된다."
         "예: !모델, !모델 openai 모델명, !api_key openai 키, !새캐릭터"
     else:
