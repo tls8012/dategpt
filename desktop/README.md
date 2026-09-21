@@ -59,6 +59,7 @@ backend virtual environment.
 - Help and Continue actions without typing commands
 - on-demand Enter input panel
 - language / initiative / world consistency settings
+- dynamic scenario-specific string controls from the active cartridge
 - dialogue overlay inside the stage/background area
 
 Keyboard interaction in the game page:
