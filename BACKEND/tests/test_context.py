@@ -222,6 +222,44 @@ class ContextBuilderTests(unittest.TestCase):
             self.assertIn("PUBLIC INDEX", dynamic)
             self.assertIn("DRAFT CHARACTER", dynamic)
 
+    def test_game_pointer_with_spaces_loads_exact_story(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            scenario_root = base / "scenario"
+            (scenario_root / "story").mkdir(parents=True)
+            (scenario_root / "story" / "전학 첫날.md").write_text(
+                "FIRST DAY STORY",
+                encoding="utf-8",
+            )
+
+            workspace = SessionWorkspace.open(
+                save_base=base / "games",
+                runtime_base=base / "runtime",
+                game_name="game",
+                game_id="id",
+            )
+            init_complete = InitComplete(
+                game_name="game",
+                game_id="id",
+                main_character="none",
+                player_character_mode="none",
+                play_mode="observer",
+                current={
+                    "active_story": "game:story/전학 첫날.md",
+                },
+            )
+
+            material = ContextBuilder(
+                scenario=ScenarioPack(scenario_root),
+                workspace=workspace,
+                init_complete=init_complete,
+            ).build_gameplay()
+            dynamic = "\n".join(
+                message["content"]
+                for message in material.dynamic_messages
+            )
+            self.assertIn("FIRST DAY STORY", dynamic)
+
 
 if __name__ == "__main__":
     unittest.main()

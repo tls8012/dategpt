@@ -234,6 +234,29 @@ class FoundationTests(unittest.TestCase):
         self.assertEqual(parsed.game_name, "legacy")
         self.assertEqual(parsed.game_id, "abc123")
 
+    def test_init_complete_normalizes_logical_game_pointers(self):
+        parsed = InitComplete.parse(
+            "# INIT COMPLETE\n\n"
+            "- game_name: g\n"
+            "- game_id: id\n"
+            "- main_character: entities/main_character.md\n"
+            "- active_story: story/전학 첫날.md\n"
+        )
+
+        self.assertEqual(
+            parsed.main_character,
+            "game:entities/main_character.md",
+        )
+        self.assertEqual(
+            parsed.current["active_story"],
+            "game:story/전학 첫날.md",
+        )
+        rendered = parsed.render()
+        self.assertIn(
+            "- active_story: game:story/전학 첫날.md",
+            rendered,
+        )
+
 
 
 if __name__ == "__main__":

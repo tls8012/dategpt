@@ -13,13 +13,13 @@ def build_langchain_tools(
 
     @tool("content_read")
     def content_read(path: str) -> str:
-        """Read one exact file from the mounted read-only scenario pack."""
+        """Read a Distribution-root-relative file, e.g. entities/a.md."""
 
         return filesystem.content_read(path)
 
     @tool("content_list")
     def content_list(path: str = ".") -> str:
-        """List files below a precise scenario-pack directory."""
+        """List below a Distribution-root-relative directory."""
 
         return _json(
             filesystem.content_list(path)
@@ -43,7 +43,7 @@ def build_langchain_tools(
 
     @tool("save_read")
     def save_read(path: str) -> str:
-        """Read an exact file from the compatible Save overlay."""
+        """Read a path relative to the current GAME_ID Save root."""
 
         return filesystem.save_read(path)
 
@@ -73,7 +73,7 @@ def build_langchain_tools(
 
     @tool("save_write")
     def save_write(path: str, content: str) -> str:
-        """Create or replace one semantic Save text file."""
+        """Write a path relative to the current GAME_ID Save root."""
 
         return filesystem.save_write(path, content)
 
@@ -152,7 +152,7 @@ def build_onboarding_tools(
 def _scratchpad_tools(tool, filesystem):
     @tool("scratchpad_read")
     def scratchpad_read(path: str) -> str:
-        """Read one DateGPT working-memory file."""
+        """Read a path relative to the current scratchpad root."""
 
         return filesystem.scratchpad_read(path)
 

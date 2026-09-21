@@ -393,7 +393,7 @@ class ProtocolTests(unittest.TestCase):
             )
             self.assertEqual(
                 app.active_session.initialization.init_complete.main_character,
-                "entities/existing.md",
+                "game:entities/existing.md",
             )
 
     def test_open_session_replaces_previous_active_session(self):
