@@ -1,14 +1,11 @@
 import json
-import os
 import sys
 from pathlib import Path
 
-from dategpt.controls import ControlState
-from dategpt.host import RuntimeHost
-from dategpt.models import ModelSettingsRouter, ModelSettingsStore
+from dategpt.protocol import BackendApplication
 
 
-# pipe에서도 한글 인코딩을 명확히 맞춘다.
+# stdout is protocol-only. Debug/log output must go to stderr or files.
 if hasattr(sys.stdin, "reconfigure"):
     sys.stdin.reconfigure(encoding="utf-8")
 
@@ -18,23 +15,17 @@ if hasattr(sys.stdout, "reconfigure"):
         line_buffering=True,
     )
 
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(
+        encoding="utf-8",
+        line_buffering=True,
+    )
+
 
 BACKEND_DIR = Path(__file__).resolve().parent
-CONFIG_DIR = Path(
-    os.environ.get(
-        "DATEGPT_CONFIG_DIR",
-        str(BACKEND_DIR / "user_data" / "config"),
-    )
-).expanduser().resolve()
-
-model_settings_store = ModelSettingsStore(
-    CONFIG_DIR / "model_settings.json"
+app = BackendApplication(
+    backend_dir=BACKEND_DIR,
 )
-model_settings_router = ModelSettingsRouter(
-    model_settings_store
-)
-
-host = RuntimeHost(controls=ControlState())
 
 
 def send(data):
@@ -47,77 +38,23 @@ def send(data):
     )
 
 
-def send_control_response(response):
-    if response.controls is not None:
-        send({
-            "type": "control_state",
-            "controls": response.controls,
-        })
-
-    send({
-        "type": "reply",
-        "text": response.message,
-    })
-
-
-def send_model_settings_response(response):
-    if response.settings is not None:
-        send({
-            "type": "model_settings",
-            "settings": response.settings,
-        })
-
-    send({
-        "type": "reply",
-        "text": response.message,
-    })
-
-
 def handle(msg):
     msg_type = msg.get("type")
 
     if msg_type == "shutdown":
+        request_id = msg.get("request_id")
+        payload = {"type": "shutdown_complete"}
+        if request_id is not None:
+            payload["request_id"] = request_id
+        send(payload)
         return False
 
-    if msg_type == "ping":
-        send({
-            "type": "reply",
-            "text": "pong — 백엔드 살아있음",
-        })
-        return True
+    for event in app.handle(
+        msg,
+        emit=send,
+    ):
+        send(event)
 
-    # Model/provider/API-key settings are deterministic and never call an LLM.
-    model_response = model_settings_router.try_handle_message(msg)
-    if model_response.handled:
-        send_model_settings_response(model_response)
-        return True
-
-    # Other deterministic runtime controls are also handled before any LLM.
-    control_response = host.route_control(msg)
-    if control_response.handled:
-        send_control_response(control_response)
-        return True
-
-    if msg_type == "say":
-        text = msg.get("text", "")
-
-        send({
-            "type": "status",
-            "message": "메세지 처리중...",
-        })
-
-        # Session mount/setup will replace this stub with AgentRunner. Model
-        # selection is already available through ModelSettingsStore/Factory.
-        send({
-            "type": "reply",
-            "text": "백엔드가 받음: {}".format(text),
-        })
-        return True
-
-    send({
-        "type": "error",
-        "message": "알 수 없는 message type: {}".format(msg_type),
-    })
     return True
 
 
@@ -130,16 +67,39 @@ def main():
 
         try:
             msg = json.loads(line)
+            if not isinstance(msg, dict):
+                raise ValueError(
+                    "protocol message must be a JSON object"
+                )
+
             keep_running = handle(msg)
             if not keep_running:
                 break
-        except Exception as exc:
+
+        except json.JSONDecodeError as exc:
             send({
                 "type": "error",
+                "code": "PROTOCOL_ERROR",
+                "message": "invalid JSON: {}".format(exc),
+                "recoverable": True,
+            })
+        except Exception as exc:
+            print(
+                "{}: {}".format(
+                    type(exc).__name__,
+                    exc,
+                ),
+                file=sys.stderr,
+                flush=True,
+            )
+            send({
+                "type": "error",
+                "code": "BACKEND_ERROR",
                 "message": "{}: {}".format(
                     type(exc).__name__,
                     exc,
                 ),
+                "recoverable": True,
             })
 
 

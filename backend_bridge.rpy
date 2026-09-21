@@ -2,6 +2,9 @@ default backend_waiting = False
 default backend_status = ""
 default backend_reply = ""
 default backend_error = ""
+default backend_session = {}
+default backend_controls = {}
+default backend_model_settings = {}
 
 
 transform backend_spinner:
@@ -11,10 +14,8 @@ transform backend_spinner:
 
 screen backend_wait_screen(who="상대"):
 
-    # backend 이벤트는 계속 여기서 받는다.
     key "backend_event" action Function(handle_backend_events)
 
-    # 기존 대사창 위쪽/안쪽에 붙는 작은 상태 표시.
     hbox:
         xalign 0.5
         yalign 0.82
@@ -28,12 +29,14 @@ screen backend_wait_screen(who="상대"):
         text "[who!q] · 생각하고 있습니다...":
             size 22
 
+
 init python:
 
     import subprocess
     import queue
     import json
     import os
+    import threading
 
 
     # ============================================================
@@ -60,20 +63,16 @@ init python:
 
 
     # ============================================================
-    # EVENT
+    # EVENT / STATE
     # ============================================================
 
     config.keymap["backend_event"] = []
 
-
-    # ============================================================
-    # STATE
-    # ============================================================
-
     backend_process = None
     backend_queue = queue.Queue()
-
     backend_handlers = {}
+    backend_request_counter = 0
+    backend_request_lock = threading.Lock()
 
 
     # ============================================================
@@ -87,6 +86,21 @@ init python:
             return func
 
         return decorator
+
+
+    # ============================================================
+    # REQUEST IDS
+    # ============================================================
+
+    def next_backend_request_id():
+
+        global backend_request_counter
+
+        with backend_request_lock:
+            backend_request_counter += 1
+            return "renpy-{}".format(
+                backend_request_counter
+            )
 
 
     # ============================================================
@@ -120,6 +134,10 @@ init python:
             backend_reader
         )
 
+        renpy.invoke_in_thread(
+            backend_stderr_reader
+        )
+
 
     def stop_backend():
 
@@ -144,14 +162,22 @@ init python:
 
 
     # ============================================================
-    # BACKGROUND READER
+    # BACKGROUND READERS
     # ============================================================
 
     def backend_reader():
 
         for line in backend_process.stdout:
 
-            msg = json.loads(line)
+            try:
+                msg = json.loads(line)
+            except Exception as exc:
+                msg = {
+                    "type": "error",
+                    "code": "PROTOCOL_ERROR",
+                    "message": "backend JSON parse failed: {}".format(exc),
+                    "recoverable": True,
+                }
 
             backend_queue.put(msg)
 
@@ -160,22 +186,44 @@ init python:
             )
 
 
+    def backend_stderr_reader():
+
+        for line in backend_process.stderr:
+            line = line.rstrip()
+            if line:
+                renpy.log(
+                    "[DateGPT backend] " + line
+                )
+
+
     # ============================================================
     # SEND
     # ============================================================
 
     def send_backend(data):
 
-        payload = json.dumps(
-            data,
+        if backend_process is None:
+            start_backend()
+
+        payload = dict(data)
+
+        if "request_id" not in payload:
+            payload["request_id"] = (
+                next_backend_request_id()
+            )
+
+        encoded = json.dumps(
+            payload,
             ensure_ascii=False,
         )
 
         backend_process.stdin.write(
-            payload + "\n"
+            encoded + "\n"
         )
 
         backend_process.stdin.flush()
+
+        return payload["request_id"]
 
 
     def begin_backend_request(data):
@@ -185,7 +233,7 @@ init python:
         store.backend_reply = ""
         store.backend_error = ""
 
-        send_backend(data)
+        return send_backend(data)
 
 
     # ============================================================
@@ -217,7 +265,6 @@ init python:
 
             if result:
                 completed = True
-
 
         if completed:
             return True
@@ -261,4 +308,88 @@ init python:
 
         store.backend_waiting = False
 
+        return True
+
+
+    @backend_handler("session_opened")
+    def handle_session_opened(msg):
+
+        store.backend_session = dict(msg)
+        store.backend_controls = dict(
+            msg.get("controls", {})
+        )
+        store.backend_waiting = False
+        return True
+
+
+    @backend_handler("session_setup_complete")
+    def handle_session_setup_complete(msg):
+
+        store.backend_session.update(msg)
+        store.backend_controls = dict(
+            msg.get("controls", {})
+        )
+        store.backend_waiting = False
+        return True
+
+
+    @backend_handler("session_state")
+    def handle_session_state(msg):
+
+        store.backend_session = dict(msg)
+        if "controls" in msg:
+            store.backend_controls = dict(
+                msg.get("controls", {})
+            )
+        store.backend_waiting = False
+        return True
+
+
+    @backend_handler("session_closed")
+    def handle_session_closed(msg):
+
+        store.backend_session = {}
+        store.backend_waiting = False
+        return True
+
+
+    @backend_handler("instance_selection_required")
+    def handle_instance_selection_required(msg):
+
+        store.backend_session = dict(msg)
+        store.backend_waiting = False
+        return True
+
+
+    @backend_handler("control_state")
+    def handle_control_state(msg):
+
+        store.backend_controls = dict(
+            msg.get("controls", {})
+        )
+
+
+    @backend_handler("model_settings")
+    def handle_model_settings(msg):
+
+        store.backend_model_settings = dict(
+            msg.get("settings", {})
+        )
+
+
+    @backend_handler("checkpoint_complete")
+    def handle_checkpoint_complete(msg):
+
+        store.backend_reply = msg.get(
+            "text",
+            ""
+        )
+        store.backend_waiting = False
+        return True
+
+
+    @backend_handler("shutdown_complete")
+    def handle_shutdown_complete(msg):
+
+        store.backend_waiting = False
         return True

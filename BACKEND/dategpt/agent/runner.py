@@ -16,13 +16,7 @@ class AgentRunResult:
 
 
 class AgentRunner:
-    """Run one stateless DateGPT player turn through a LangChain agent loop.
-
-    A new LangChain agent harness is created for each player turn. Within that
-    invocation, create_agent keeps model/tool messages in AgentState while tools
-    execute. No checkpointer is configured here, so LangChain does not become
-    the cross-turn source of truth: DateGPT history, Save, and scratchpad do.
-    """
+    """Run one stateless DateGPT player turn through a LangChain agent loop."""
 
     def __init__(
         self,
@@ -54,9 +48,34 @@ class AgentRunner:
             user_input,
             history_limit=history_limit,
         )
-        return self.run_context(turn)
+        return self.run_context(
+            turn,
+            record_history=True,
+        )
 
-    def run_context(self, turn: TurnContext) -> AgentRunResult:
+    def run_maintenance(
+        self,
+        instruction: str,
+        *,
+        history_limit: int = 20,
+    ) -> AgentRunResult:
+        """Run an explicit engine/user maintenance command without chat history append."""
+
+        turn = self.host.begin_turn(
+            instruction,
+            history_limit=history_limit,
+        )
+        return self.run_context(
+            turn,
+            record_history=False,
+        )
+
+    def run_context(
+        self,
+        turn: TurnContext,
+        *,
+        record_history: bool = True,
+    ) -> AgentRunResult:
         if self.host.scenario is None:
             raise RuntimeError("scenario pack is not mounted")
         if self.host.workspace is None:
@@ -83,20 +102,21 @@ class AgentRunner:
         raw_result = agent.invoke({"messages": messages})
         text = _extract_final_text(raw_result)
 
-        self.host.workspace.history.append(
-            {
-                "role": "user",
-                "text": turn.user_input,
-                "prompt_fingerprint": turn.prompt_fingerprint,
-            }
-        )
-        self.host.workspace.history.append(
-            {
-                "role": "assistant",
-                "text": text,
-                "prompt_fingerprint": turn.prompt_fingerprint,
-            }
-        )
+        if record_history:
+            self.host.workspace.history.append(
+                {
+                    "role": "user",
+                    "text": turn.user_input,
+                    "prompt_fingerprint": turn.prompt_fingerprint,
+                }
+            )
+            self.host.workspace.history.append(
+                {
+                    "role": "assistant",
+                    "text": text,
+                    "prompt_fingerprint": turn.prompt_fingerprint,
+                }
+            )
 
         return AgentRunResult(
             text=text,
