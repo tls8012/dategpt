@@ -4,7 +4,7 @@ QMainWindow, QWidget {
     font-size: 15px;
 }
 
-QFrame#Card, QFrame#DialogueCard {
+QFrame#Card {
     background: #20242b;
     border: 1px solid #343a44;
     border-radius: 10px;
@@ -16,6 +16,20 @@ QFrame#Stage {
     border-radius: 8px;
 }
 
+QFrame#DialogueCard {
+    background-color: rgba(18, 20, 24, 205);
+    border: 1px solid rgba(90, 98, 112, 190);
+    border-radius: 10px;
+}
+
+QFrame#DialogueCard QLabel {
+    background: transparent;
+}
+
+QFrame#InputFrame {
+    background: transparent;
+}
+
 QLabel#Title {
     font-size: 32px;
     font-weight: 700;
@@ -24,6 +38,18 @@ QLabel#Title {
 QLabel#Speaker {
     font-size: 18px;
     font-weight: 700;
+}
+
+QLabel#DialogueText {
+    background: transparent;
+    font-size: 17px;
+    line-height: 1.4;
+}
+
+QLabel#PageHint, QLabel#StageHint {
+    background: transparent;
+    color: #8d96a4;
+    font-size: 12px;
 }
 
 QLabel#Muted, QLabel#Status {
