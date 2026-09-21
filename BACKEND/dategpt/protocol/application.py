@@ -28,6 +28,7 @@ from ..onboarding import (
 )
 from ..prompts import PromptBundle
 from ..scenarios import ScenarioPack
+from ..sources import GitHubSourceResolver
 from .errors import ProtocolError
 
 
@@ -83,6 +84,21 @@ class BackendApplication:
         self.cartridges = CartridgeLibrary(
             self.cartridge_base
         )
+        self.source_cache_base = _env_path(
+            "DATEGPT_SOURCE_CACHE_DIR",
+            self.backend_dir / "user_data" / "sources",
+        )
+        self.sources = GitHubSourceResolver(
+            self.source_cache_base
+        )
+        self.default_prompt_source = os.environ.get(
+            "DATEGPT_PROMPT_SOURCE",
+            (
+                "https://github.com/"
+                "tls8012/chatgpt-animevisualnovel/"
+                "tree/main/scaffolding"
+            ),
+        ).strip()
 
         self.model_settings_store = (
             model_settings_store
@@ -136,6 +152,7 @@ class BackendApplication:
                 return self._install_cartridge(
                     message,
                     request_id=request_id,
+                    emit=emit,
                 )
 
             if message_type == "list_cartridges":
@@ -154,6 +171,7 @@ class BackendApplication:
                 return self._open_session(
                     message,
                     request_id=request_id,
+                    emit=emit,
                 )
 
             if message_type == "setup_session":
@@ -349,18 +367,40 @@ class BackendApplication:
         message: Mapping[str, Any],
         *,
         request_id,
+        emit: Optional[Callable[[dict], None]],
     ) -> List[dict]:
-        source_path = str(
-            message.get("source_path", "")
+        source_value = str(
+            message.get(
+                "source",
+                message.get("source_path", ""),
+            )
         ).strip()
-        if not source_path:
+        if not source_value:
             raise ProtocolError(
                 "INVALID_REQUEST",
-                "install_cartridge.source_path가 필요합니다.",
+                "install_cartridge.source가 필요합니다.",
             )
 
+        if _is_github_url(source_value):
+            if emit is not None:
+                emit(
+                    _event(
+                        "status",
+                        request_id,
+                        message="GitHub 카트리지 소스 동기화 중...",
+                    )
+                )
+            source_path = self.sources.materialize(
+                source_value,
+                refresh=True,
+            )
+        else:
+            source_path = Path(
+                source_value
+            ).expanduser().resolve()
+
         installed = self.cartridges.install_directory(
-            Path(source_path),
+            source_path,
             replace=bool(
                 message.get("replace", False)
             ),
@@ -378,14 +418,15 @@ class BackendApplication:
         message: Mapping[str, Any],
         *,
         request_id,
+        emit: Optional[Callable[[dict], None]],
     ) -> List[dict]:
         scenario_path = self._resolve_scenario_path(
             message
         )
-        prompt_path = _message_or_env_path(
+        prompt_path = self._resolve_prompt_path(
             message,
-            "prompt_path",
-            "DATEGPT_PROMPT_DIR",
+            request_id=request_id,
+            emit=emit,
         )
 
         scenario = ScenarioPack(scenario_path)
@@ -856,6 +897,65 @@ class BackendApplication:
             ),
         )
 
+    def _resolve_prompt_path(
+        self,
+        message: Mapping[str, Any],
+        *,
+        request_id,
+        emit: Optional[Callable[[dict], None]],
+    ) -> Path:
+        direct = str(
+            message.get("prompt_path", "")
+        ).strip()
+        if direct:
+            return Path(
+                direct
+            ).expanduser().resolve()
+
+        env_path = os.environ.get(
+            "DATEGPT_PROMPT_DIR",
+            "",
+        ).strip()
+        if env_path:
+            return Path(
+                env_path
+            ).expanduser().resolve()
+
+        source = str(
+            message.get(
+                "prompt_source",
+                self.default_prompt_source,
+            )
+        ).strip()
+        if not source:
+            raise ProtocolError(
+                "PATH_NOT_CONFIGURED",
+                (
+                    "prompt_path, DATEGPT_PROMPT_DIR 또는 "
+                    "DATEGPT_PROMPT_SOURCE 설정이 필요합니다."
+                ),
+            )
+
+        if not _is_github_url(source):
+            raise ProtocolError(
+                "INVALID_REQUEST",
+                "prompt_source는 github.com HTTPS URL이어야 합니다.",
+            )
+
+        if emit is not None:
+            emit(
+                _event(
+                    "status",
+                    request_id,
+                    message="공용 prompt scaffolding 동기화 중...",
+                )
+            )
+
+        return self.sources.materialize(
+            source,
+            refresh=True,
+        )
+
     def _resolve_scenario_path(
         self,
         message: Mapping[str, Any],
@@ -1065,3 +1165,8 @@ def _mode_selected_message(
             "!캐릭터확정으로 시작할 수 있습니다."
         )
     return "온보딩 모드를 선택했습니다."
+
+
+def _is_github_url(value: str) -> bool:
+    text = str(value).strip().casefold()
+    return text.startswith("https://github.com/")

@@ -7,17 +7,28 @@ default dev_prompt_dir = ""
 
 init python:
 
-    def normalize_dev_path(value):
+    def is_github_source(value):
+        return (
+            (value or "")
+            .strip()
+            .casefold()
+            .startswith("https://github.com/")
+        )
+
+
+    def normalize_dev_source(value):
         value = (value or "").strip()
         if not value:
             return ""
+        if is_github_source(value):
+            return value
         return os.path.abspath(
             os.path.expanduser(value)
         )
 
 
     def default_dev_cartridge_source():
-        return normalize_dev_path(
+        return normalize_dev_source(
             os.environ.get(
                 "DATEGPT_TEST_CARTRIDGE_SOURCE",
                 "",
@@ -26,11 +37,14 @@ init python:
 
 
     def default_dev_prompt_dir():
-        return normalize_dev_path(
-            os.environ.get(
-                "DATEGPT_PROMPT_DIR",
-                "",
-            )
+        value = os.environ.get(
+            "DATEGPT_PROMPT_DIR",
+            "",
+        ).strip()
+        if not value:
+            return ""
+        return os.path.abspath(
+            os.path.expanduser(value)
         )
 
 
@@ -40,63 +54,35 @@ label start:
 
     $ start_backend()
 
-    # ------------------------------------------------------------
-    # Cartridge source
-    # ------------------------------------------------------------
-
     if not dev_cartridge_source:
         $ dev_cartridge_source = default_dev_cartridge_source()
 
     if not dev_cartridge_source:
-        "테스트 카트리지 폴더를 입력해."
-        "예: /path/to/chatgpt_cartridges/datellm"
+        "테스트 카트리지 소스를 입력해."
+        "로컬 폴더 또는 GitHub tree 링크를 사용할 수 있다."
+        "예: https://github.com/tls8012/chatgpt_cartridges/tree/main/datellm"
 
         $ dev_cartridge_source = renpy.input(
-            "카트리지 경로:",
-            length=1024,
+            "카트리지 소스:",
+            length=2048,
         ).strip()
 
-        $ dev_cartridge_source = normalize_dev_path(
+        $ dev_cartridge_source = normalize_dev_source(
             dev_cartridge_source
         )
 
-    # ------------------------------------------------------------
-    # Shared prompt scaffolding
-    # ------------------------------------------------------------
+    if not dev_cartridge_source:
+        "카트리지 소스가 비어 있어서 종료한다."
+        jump dategpt_shutdown
 
     if not dev_prompt_dir:
         $ dev_prompt_dir = default_dev_prompt_dir()
-
-    if not dev_prompt_dir:
-        "공용 prompt scaffolding 폴더를 입력해."
-        "예: /path/to/chatgpt-animevisualnovel/scaffolding"
-
-        $ dev_prompt_dir = renpy.input(
-            "프롬프트 경로:",
-            length=1024,
-        ).strip()
-
-        $ dev_prompt_dir = normalize_dev_path(
-            dev_prompt_dir
-        )
-
-    if not dev_cartridge_source:
-        "카트리지 경로가 비어 있어서 종료한다."
-        jump dategpt_shutdown
-
-    if not dev_prompt_dir:
-        "프롬프트 경로가 비어 있어서 종료한다."
-        jump dategpt_shutdown
-
-    # ------------------------------------------------------------
-    # Install cartridge
-    # ------------------------------------------------------------
 
     "카트리지를 로컬 라이브러리에 설치/확인한다."
 
     $ begin_backend_request({
         "type": "install_cartridge",
-        "source_path": dev_cartridge_source,
+        "source": dev_cartridge_source,
     })
 
     call screen backend_wait_screen("backend")
@@ -120,20 +106,18 @@ label start:
 
     "카트리지: [mounted_game_name!q] / build [mounted_build_version!q]"
 
-    # ------------------------------------------------------------
-    # Open the single active session
-    # ------------------------------------------------------------
-
 label dategpt_open_session:
 
     $ open_payload = {
         "type": "open_session",
         "game_name": mounted_game_name,
-        "prompt_path": dev_prompt_dir,
     }
 
     if mounted_build_version:
         $ open_payload["build_version"] = mounted_build_version
+
+    if dev_prompt_dir:
+        $ open_payload["prompt_path"] = dev_prompt_dir
 
     $ begin_backend_request(open_payload)
 
@@ -143,7 +127,6 @@ label dategpt_open_session:
         "세션 열기 오류: [backend_error!q]"
         jump dategpt_shutdown
 
-    # Multiple existing GAME_IDs are the only case that needs a choice.
     if backend_session.get("type") == "instance_selection_required":
 
         "기존 플레이가 여러 개 있다."
@@ -161,25 +144,23 @@ label dategpt_open_session:
             length=128,
         ).strip()
 
+        $ reopen_payload = {
+            "type": "open_session",
+            "game_name": mounted_game_name,
+        }
+
+        if mounted_build_version:
+            $ reopen_payload["build_version"] = mounted_build_version
+
+        if dev_prompt_dir:
+            $ reopen_payload["prompt_path"] = dev_prompt_dir
+
         if chosen_game_id.casefold() == "new":
-
-            $ begin_backend_request({
-                "type": "open_session",
-                "game_name": mounted_game_name,
-                "build_version": mounted_build_version,
-                "prompt_path": dev_prompt_dir,
-                "new_game": True,
-            })
-
+            $ reopen_payload["new_game"] = True
         else:
+            $ reopen_payload["game_id"] = chosen_game_id
 
-            $ begin_backend_request({
-                "type": "open_session",
-                "game_name": mounted_game_name,
-                "build_version": mounted_build_version,
-                "prompt_path": dev_prompt_dir,
-                "game_id": chosen_game_id,
-            })
+        $ begin_backend_request(reopen_payload)
 
         call screen backend_wait_screen("backend")
 
@@ -202,6 +183,7 @@ label dategpt_open_session:
 
     if backend_session.get("needs_setup", False):
         "새 게임 온보딩 상태다."
+        "공용 scaffolding은 원본 prompt repo에서 자동으로 동기화된다."
         "먼저 모델/API 키를 설정해도 되고, 바로 대화를 시작해도 된다."
         "예: !모델, !모델 openai 모델명, !api_key openai 키, !새캐릭터"
     else:
@@ -257,15 +239,11 @@ label dategpt_text_loop:
 label dategpt_shutdown:
 
     $ stop_backend()
-
     "DateGPT backend 종료."
-
     return
 
 
-# 앱 자체를 종료할 때 backend도 정리.
 label quit:
 
     $ stop_backend()
-
     return

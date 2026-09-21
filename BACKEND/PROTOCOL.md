@@ -164,3 +164,32 @@ When build_version is omitted, the newest installed build is chosen
 deterministically. `list_cartridges` reports installed builds.
 
 Direct `scenario_path` mount remains available for development.
+
+
+## GitHub source materialization
+
+install_cartridge accepts a local directory or a GitHub HTTPS repository/tree
+URL. Example:
+
+```json
+{
+  "type": "install_cartridge",
+  "source": "https://github.com/tls8012/chatgpt_cartridges/tree/main/datellm"
+}
+```
+
+GitHub sources are materialized with the machine's local `git` executable into
+`user_data/sources/`, then passed to the normal local cartridge installer.
+DateGPT does not store GitHub credentials. Private repositories work when normal
+command-line git access on the machine already works through the user's
+credential helper. Credentials embedded in URLs are rejected.
+
+If open_session does not receive prompt_path and DATEGPT_PROMPT_DIR is unset,
+the backend automatically materializes the shared prompt bundle from:
+
+```text
+https://github.com/tls8012/chatgpt-animevisualnovel/tree/main/scaffolding
+```
+
+DATEGPT_PROMPT_SOURCE can override that GitHub source. A local
+DATEGPT_PROMPT_DIR still takes precedence.
