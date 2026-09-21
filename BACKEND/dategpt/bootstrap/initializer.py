@@ -157,11 +157,12 @@ class SessionInitializer:
             main_character,
         )
         state = controls or result.controls
+        for name, value in (
+            result.manifest.control_defaults.items()
+        ):
+            state.extra.setdefault(name, value)
 
-        extra_fields = dict(
-            result.manifest.control_defaults
-        )
-        extra_fields.update(state.extra)
+        extra_fields = dict(state.extra)
 
         init_complete = InitComplete(
             game_name=result.game_name,
