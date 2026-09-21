@@ -5,6 +5,7 @@ default backend_error = ""
 default backend_session = {}
 default backend_controls = {}
 default backend_model_settings = {}
+default backend_onboarding = {}
 
 
 transform backend_spinner:
@@ -318,6 +319,9 @@ init python:
         store.backend_controls = dict(
             msg.get("controls", {})
         )
+        store.backend_onboarding = dict(
+            msg.get("onboarding", {})
+        )
         store.backend_waiting = False
         return True
 
@@ -329,6 +333,10 @@ init python:
         store.backend_controls = dict(
             msg.get("controls", {})
         )
+        if "onboarding" in msg:
+            store.backend_onboarding = dict(
+                msg.get("onboarding", {})
+            )
         store.backend_waiting = False
         return True
 
@@ -340,6 +348,10 @@ init python:
         if "controls" in msg:
             store.backend_controls = dict(
                 msg.get("controls", {})
+            )
+        if "onboarding" in msg:
+            store.backend_onboarding = dict(
+                msg.get("onboarding", {})
             )
         store.backend_waiting = False
         return True
@@ -359,6 +371,14 @@ init python:
         store.backend_session = dict(msg)
         store.backend_waiting = False
         return True
+
+
+    @backend_handler("onboarding_state")
+    def handle_onboarding_state(msg):
+
+        store.backend_onboarding = dict(
+            msg.get("state", {})
+        )
 
 
     @backend_handler("control_state")

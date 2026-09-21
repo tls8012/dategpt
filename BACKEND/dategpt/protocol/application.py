@@ -446,6 +446,9 @@ class BackendApplication:
         session.host.set_init_complete(
             init_complete
         )
+        session.onboarding.mark_complete(
+            init_complete
+        )
 
         return [
             _event(

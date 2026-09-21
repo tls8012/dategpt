@@ -160,6 +160,10 @@ class ProtocolTests(unittest.TestCase):
                 setup[0]["type"],
                 "session_setup_complete",
             )
+            self.assertEqual(
+                app.active_session.onboarding.state.phase,
+                "complete",
+            )
 
             statuses = []
             played = app.handle(

@@ -182,10 +182,18 @@ class OnboardingController:
         )
         self.host.set_init_complete(init_complete)
 
-        self.state.phase = "complete"
-        self.state.main_character = main_character
-        self._save()
+        self.mark_complete(init_complete)
         return init_complete
+
+    def mark_complete(self, init_complete) -> None:
+        self.state = OnboardingState(
+            phase="complete",
+            player_character_mode=(
+                init_complete.player_character_mode
+            ),
+            main_character=init_complete.main_character,
+        )
+        self._save()
 
     def public_state(self) -> dict:
         data = asdict(self.state)

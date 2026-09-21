@@ -80,7 +80,9 @@ class ContextBuilder:
         if overlay_block:
             blocks.append(overlay_block)
 
-        scratchpad_block = self._scratchpad_block()
+        scratchpad_block = self._scratchpad_block(
+            exclude_prefixes=("onboarding/",),
+        )
         if scratchpad_block:
             blocks.append(scratchpad_block)
 
@@ -343,6 +345,7 @@ class ContextBuilder:
         self,
         *,
         exclude: Optional[set] = None,
+        exclude_prefixes: Sequence[str] = (),
     ) -> str:
         excluded = exclude or set()
         snapshot = self.workspace.scratchpad.snapshot()
@@ -350,6 +353,11 @@ class ContextBuilder:
 
         for path in sorted(snapshot):
             if path in excluded:
+                continue
+            if any(
+                path.startswith(prefix)
+                for prefix in exclude_prefixes
+            ):
                 continue
             chunks.append(
                 "## {}\n{}".format(
