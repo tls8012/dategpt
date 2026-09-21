@@ -4,7 +4,7 @@ from pathlib import Path
 
 from dategpt.bootstrap import (
     GameInstanceSelectionRequired,
-    ScenarioSourceConflict,
+    InitComplete,
     SessionInitializer,
 )
 from dategpt.controls import ControlRouter, ControlState
@@ -147,14 +147,12 @@ class FoundationTests(unittest.TestCase):
             )
             result = initializer.prepare(
                 ScenarioPack(scenario_root),
-                distribution_url="https://example.invalid/game",
-                manifest_url="https://example.invalid/game/file-manifest.md",
             )
 
             self.assertTrue(result.is_new)
             self.assertTrue(result.needs_setup)
             game_root = base / "games" / "테스트게임"
-            self.assertTrue((game_root / "game_source.md").exists())
+            self.assertFalse((game_root / "game_source.md").exists())
             save_root = game_root / result.game_id
             for name in ("entities", "story", "flags", "hidden", "assets"):
                 self.assertTrue((save_root / name).is_dir())
@@ -174,8 +172,6 @@ class FoundationTests(unittest.TestCase):
             )
             first = initializer.prepare(
                 ScenarioPack(scenario_root),
-                distribution_url="https://example.invalid/game",
-                manifest_url="https://example.invalid/manifest",
             )
             controls = ControlState(
                 initiative="high",
@@ -221,20 +217,23 @@ class FoundationTests(unittest.TestCase):
                 initializer.prepare(pack)
             self.assertEqual(len(caught.exception.game_ids), 2)
 
-    def test_initializer_rejects_registered_source_conflict(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp)
-            scenario_root = base / "scenario"
-            make_scenario(scenario_root)
-            initializer = SessionInitializer(
-                save_base=base / "games",
-                runtime_base=base / "runtime",
-            )
-            pack = ScenarioPack(scenario_root)
-            initializer.prepare(pack, distribution_url="A")
 
-            with self.assertRaises(ScenarioSourceConflict):
-                initializer.prepare(pack, distribution_url="B", new_game=True)
+    def test_init_complete_drops_legacy_game_source_field(self):
+        parsed = InitComplete.parse(
+            "# INIT COMPLETE\n\n"
+            "- game_name: legacy\n"
+            "- game_id: abc123\n"
+            "- game_source: ../game_source.md\n"
+            "- play_mode: observer\n"
+            "- player_character_mode: none\n"
+            "- main_character: none\n"
+        )
+
+        rendered = parsed.render()
+        self.assertNotIn("game_source", rendered)
+        self.assertEqual(parsed.game_name, "legacy")
+        self.assertEqual(parsed.game_id, "abc123")
+
 
 
 if __name__ == "__main__":

@@ -194,3 +194,12 @@ through GitHub Actions. DateGPT resolves prompts in this order:
 
 The managed DateGPT copy currently contains only `runtime.md` and
 `onboarding.md`.
+
+
+## Cartridge source of truth
+
+Mounted cartridge content is the Distribution source of truth at runtime.
+DateGPT no longer creates or resolves `games/GAME_NAME/game_source.md`.
+Scenario content is read directly from the mounted local `ScenarioPack`.
+Legacy `game_source` fields in existing `init완료.md` files are accepted
+for compatibility and omitted on subsequent renders.

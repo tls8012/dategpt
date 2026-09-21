@@ -4,7 +4,7 @@
 
 ## 컨트롤과 상태
 
-- 게임 루트: `games/GAME_NAME/`. `game_source.md`에 Distribution 주소와 manifest 위치를 보관한다.
+- Distribution: 엔진이 현재 카트리지를 읽기 전용 ScenarioPack으로 마운트한다. 원본 자료는 제공된 scenario/content 도구로 읽는다.
 - Save 루트: `games/GAME_NAME/GAME_ID/`. `init완료.md`에서 현재 상태와 컨트롤을 읽는다.
 - `world_consistency`, `initiative`: 기본 `medium`, 허용값 `low | medium | high`. 사용자의 명시적 변경을 적용하며 `hard`는 initiative high로 해석할 수 있다.
 - `language`: 기본 `한국어`. 서술·대사·안내·진단을 이 언어로 출력한다. 원작의 고유명사, 인물별 말투·호칭·시대감은 의미를 보존해 옮기고, 파일 경로·ID·필드명·명령어는 번역하지 않는다. 출력 언어 변경은 게임 내 언어 장벽이나 인물의 언어 능력·지식을 바꾸지 않는다.
@@ -93,7 +93,7 @@
 
 ## 자료 조회와 캐릭터
 
-필요한 자료는 가장 직접적인 경로로 확인한다. 원천 주소를 잊었으면 game_source의 manifest_url/distribution_url을 사용한다. 이미 충분히 로드된 같은 자료를 매 턴 재조회하지 않되, 원격 접근이 느리다는 이유로 설정을 추측하지 않는다.
+필요한 자료는 현재 마운트된 Distribution에서 가장 직접적인 경로로 확인한다. `file-manifest.md`, `character_manifest.md`와 정확한 entity/story 포인터를 우선하고, 이미 충분히 로드된 같은 자료를 매 턴 재조회하지 않는다.
 
 캐릭터는 Distribution `character_manifest.md`와 Save의 동명 overlay에서 이름·공개 이명·직책으로 찾고 정확한 entity만 읽는다. Save의 최신 공개 식별 정보를 우선하며, 색인에 없는 이름만 필요한 범위에서 검색한다. 존재 확인을 위해 모든 캐릭터 파일을 스캔하지 않는다.
 
@@ -225,7 +225,7 @@ Save는 원본 복사본이 아니라 변경·생성된 장기 상태의 overlay
 
 사건·대사 원문을 전부 append하지 않는다. 관계 인상은 현재 유효한 판단으로 병합·대체한다. manifest에는 성격·외형·감정·부상·임시 위치·긴 story·질적 관계 인상을 넣지 않는다. 실제로 공개된 정체는 검색에 필요한 만큼만 넣으며 미해금 정체·이명은 제외한다.
 
-현재 GAME_ID에만 저장하고 game_source는 원천 재연결 요청이 없으면 다시 쓰지 않는다. 저장 목적으로 미해금 hidden을 조회하거나 init완료에 payload를 넣지 않는다.
+현재 GAME_ID에만 저장한다. 저장 목적으로 미해금 hidden을 조회하거나 init완료에 payload를 넣지 않는다.
 
 새 채팅 복구는 init의 절차를 따른다. 회수 가능한 같은 인스턴스 맥락이 Save보다 최신이면 그 차이를 압축 반영한다. narrative_notes는 읽을 수 있는 작업 메모일 뿐 세계 사실이 아니다. 현재 확정 상태·Save·원본과 충돌하거나 소진되면 버리고, 파일이 없어도 공개 상태와 인물 동기로 새 메모를 시작할 수 있다. 세션 작업 상태가 제품 메모리에 영속한다고 가정하지 않는다.
 

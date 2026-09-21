@@ -9,7 +9,6 @@ from ..agent import AgentRunner
 from ..bootstrap import (
     GameInstanceSelectionRequired,
     InitializationResult,
-    ScenarioSourceConflict,
     SessionInitializer,
     UnknownGameInstance,
 )
@@ -311,13 +310,6 @@ class BackendApplication:
                     "요청한 GAME_ID를 찾을 수 없습니다.",
                 ).event(request_id)
             ]
-        except ScenarioSourceConflict as exc:
-            return [
-                ProtocolError(
-                    "SCENARIO_SOURCE_CONFLICT",
-                    str(exc),
-                ).event(request_id)
-            ]
         except CharacterDraftMissing as exc:
             return [
                 ProtocolError(
@@ -429,12 +421,6 @@ class BackendApplication:
 
         result = self.initializer.prepare(
             scenario,
-            distribution_url=str(
-                message.get("distribution_url", "")
-            ).strip(),
-            manifest_url=str(
-                message.get("manifest_url", "")
-            ).strip(),
             requested_game_id=(
                 str(message["game_id"]).strip()
                 if message.get("game_id") is not None

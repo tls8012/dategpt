@@ -45,46 +45,10 @@ class ScenarioManifest:
         )
 
 
-@dataclass(frozen=True)
-class GameSource:
-    game_name: str
-    distribution_url: str
-    manifest_url: str
-    content_root: str
-
-    @classmethod
-    def parse(cls, text: str) -> "GameSource":
-        fields = parse_markdown_fields(text)
-        game_name = fields.get("game_name", "").strip()
-        if not game_name:
-            raise ValueError("game_source.md is missing game_name")
-        return cls(
-            game_name=game_name,
-            distribution_url=fields.get("distribution_url", "").strip(),
-            manifest_url=fields.get("manifest_url", "").strip(),
-            content_root=fields.get("content_root", "").strip(),
-        )
-
-    def render(self) -> str:
-        return (
-            "# GAME SOURCE\n\n"
-            "- game_name: {}\n"
-            "- distribution_url: {}\n"
-            "- manifest_url: {}\n"
-            "- content_root: {}\n"
-        ).format(
-            self.game_name,
-            self.distribution_url,
-            self.manifest_url,
-            self.content_root,
-        )
-
-
 @dataclass
 class InitComplete:
     game_name: str
     game_id: str
-    game_source: str = "../game_source.md"
     play_mode: str = "player"
     player_character_mode: str = "original"
     main_character: str = "entities/main_character.md"
@@ -134,7 +98,6 @@ class InitComplete:
         return cls(
             game_name=fields["game_name"],
             game_id=fields["game_id"],
-            game_source=fields.get("game_source", "../game_source.md"),
             play_mode=fields.get("play_mode", "player"),
             player_character_mode=fields.get("player_character_mode", "original"),
             main_character=fields.get("main_character", "entities/main_character.md"),
@@ -164,7 +127,6 @@ class InitComplete:
             "",
             "- game_name: {}".format(self.game_name),
             "- game_id: {}".format(self.game_id),
-            "- game_source: {}".format(self.game_source),
             "- play_mode: {}".format(self.play_mode),
             "- player_character_mode: {}".format(self.player_character_mode),
             "- main_character: {}".format(self.main_character),
