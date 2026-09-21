@@ -38,6 +38,29 @@ def make_scenario(root: Path, game_name="테스트게임", content_root="content
 
 
 class FoundationTests(unittest.TestCase):
+    def test_markdown_fields_accept_emphasized_keys(self):
+        from dategpt.bootstrap.markdown import (
+            parse_markdown_fields,
+        )
+
+        parsed = parse_markdown_fields(
+            "- **game_name**: datellm\n"
+            "- *game_id*: abc123\n"
+            "- _gender_: female\n"
+        )
+        self.assertEqual(
+            parsed["game_name"],
+            "datellm",
+        )
+        self.assertEqual(
+            parsed["game_id"],
+            "abc123",
+        )
+        self.assertEqual(
+            parsed["gender"],
+            "female",
+        )
+
     def test_rooted_store_blocks_escape_and_read_only_write(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = RootedTextStore(Path(tmp), writable=False)
