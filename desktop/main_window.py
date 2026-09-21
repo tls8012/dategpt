@@ -883,6 +883,7 @@ class SettingsDialog(QDialog):
         self.setMinimumWidth(560)
         self._snapshot: Dict[str, Any] = {}
         self._controls: Dict[str, Any] = {}
+        self._extra_edits: Dict[str, QLineEdit] = {}
 
         root = QVBoxLayout(self)
         form = QFormLayout()
@@ -923,6 +924,23 @@ class SettingsDialog(QDialog):
             self.consistency_combo,
         )
         root.addLayout(form)
+
+        self.extra_controls_label = QLabel(
+            "시나리오 설정"
+        )
+        self.extra_controls_label.setObjectName("Muted")
+        root.addWidget(self.extra_controls_label)
+
+        self.extra_controls_widget = QWidget()
+        self.extra_controls_form = QFormLayout(
+            self.extra_controls_widget
+        )
+        self.extra_controls_form.setContentsMargins(
+            0, 0, 0, 0
+        )
+        root.addWidget(self.extra_controls_widget)
+        self.extra_controls_label.hide()
+        self.extra_controls_widget.hide()
 
         buttons = QHBoxLayout()
         self.refresh_button = QPushButton("현재 설정 읽기")
@@ -1023,6 +1041,39 @@ class SettingsDialog(QDialog):
             ),
         )
 
+        while self.extra_controls_form.rowCount():
+            self.extra_controls_form.removeRow(0)
+        self._extra_edits = {}
+
+        reserved = {
+            "language",
+            "initiative",
+            "world_consistency",
+            "dev_commands",
+            "paused",
+        }
+        extras = {
+            str(key): str(value)
+            for key, value in controls.items()
+            if str(key) not in reserved
+        }
+        for name in sorted(extras):
+            edit = QLineEdit()
+            edit.setText(extras[name])
+            self.extra_controls_form.addRow(
+                name,
+                edit,
+            )
+            self._extra_edits[name] = edit
+
+        has_extras = bool(self._extra_edits)
+        self.extra_controls_label.setVisible(
+            has_extras
+        )
+        self.extra_controls_widget.setVisible(
+            has_extras
+        )
+
     def set_status(self, text: str) -> None:
         self.status_label.setText(text)
 
@@ -1070,17 +1121,19 @@ class SettingsDialog(QDialog):
         if not language:
             self.set_status("언어를 입력하세요.")
             return
-        self.controls_requested.emit(
-            {
-                "language": language,
-                "initiative": (
-                    self.initiative_combo.currentText()
-                ),
-                "world_consistency": (
-                    self.consistency_combo.currentText()
-                ),
-            }
-        )
+        values = {
+            "language": language,
+            "initiative": (
+                self.initiative_combo.currentText()
+            ),
+            "world_consistency": (
+                self.consistency_combo.currentText()
+            ),
+        }
+        for name, edit in self._extra_edits.items():
+            values[name] = edit.text().strip()
+
+        self.controls_requested.emit(values)
 
     @staticmethod
     def _set_combo_value(
