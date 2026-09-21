@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import uuid
@@ -8,10 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from ..bootstrap.markdown import parse_markdown_fields
 from ..bootstrap.models import ScenarioManifest
 from ..fs import safe_path_segment
-from ..scenarios.character_index import parse_character_manifest
 
 
 SUPPORTED_FORMAT_VERSION = "1"
@@ -57,24 +54,14 @@ class CartridgeLibrary:
         distribution = self._distribution_root(source)
         manifest_path = distribution / "file-manifest.md"
 
-        manifest_text = manifest_path.read_text(
-            encoding="utf-8"
-        )
         manifest = ScenarioManifest.parse(
-            manifest_text
+            manifest_path.read_text(encoding="utf-8")
         )
         if manifest.format_version != SUPPORTED_FORMAT_VERSION:
             raise UnsupportedCartridgeFormat(
                 "unsupported FORMAT_VERSION: {} (supported: {})".format(
                     manifest.format_version,
                     SUPPORTED_FORMAT_VERSION,
-                )
-            )
-
-        if manifest.content_root != ".":
-            raise ValueError(
-                "CONTENT_ROOT must be . for packaged cartridges; got: {}".format(
-                    manifest.content_root
                 )
             )
 
@@ -85,11 +72,6 @@ class CartridgeLibrary:
         build_version = safe_path_segment(
             manifest.build_version.strip(),
             "BUILD_VERSION",
-        )
-
-        self._validate_declared_paths(
-            distribution,
-            manifest_text,
         )
 
         return InstalledCartridge(
@@ -273,136 +255,6 @@ class CartridgeLibrary:
                 )
 
         return items
-
-    @classmethod
-    def _validate_declared_paths(
-        cls,
-        distribution: Path,
-        manifest_text: str,
-    ) -> None:
-        fields = {
-            key.casefold(): value
-            for key, value in parse_markdown_fields(
-                manifest_text
-            ).items()
-        }
-
-        entrypoints = {}
-        for name in (
-            "character_manifest",
-            "welcome",
-            "story_manifest",
-            "start_story",
-        ):
-            value = str(fields.get(name, "")).strip()
-            if not value:
-                continue
-            cls._require_distribution_file(
-                distribution,
-                value,
-                field_name=name,
-            )
-            entrypoints[name] = value
-
-        character_manifest = entrypoints.get(
-            "character_manifest"
-        )
-        if not character_manifest:
-            default = distribution / "character_manifest.md"
-            if default.is_file():
-                character_manifest = "character_manifest.md"
-
-        if character_manifest:
-            character_text = cls._require_distribution_file(
-                distribution,
-                character_manifest,
-                field_name="character_manifest",
-            ).read_text(encoding="utf-8")
-
-            for entry in parse_character_manifest(
-                character_text
-            ):
-                cls._require_distribution_file(
-                    distribution,
-                    entry.path,
-                    field_name=(
-                        "character_manifest path for {}"
-                    ).format(entry.name),
-                )
-
-        context_manifest = distribution / "context_manifest.json"
-        if context_manifest.is_file():
-            data = json.loads(
-                context_manifest.read_text(encoding="utf-8")
-            )
-            if not isinstance(data, dict):
-                raise ValueError(
-                    "context_manifest.json must contain an object"
-                )
-            core_files = data.get("core_files", [])
-            if not isinstance(core_files, list):
-                raise ValueError(
-                    "context_manifest.json core_files must be a list"
-                )
-            for value in core_files:
-                if not isinstance(value, str):
-                    raise ValueError(
-                        "context_manifest.json core_files entries must be strings"
-                    )
-                cls._require_distribution_file(
-                    distribution,
-                    value,
-                    field_name="context_manifest core_files",
-                )
-
-    @staticmethod
-    def _require_distribution_file(
-        distribution: Path,
-        value: str,
-        *,
-        field_name: str,
-    ) -> Path:
-        raw = str(value).strip()
-        if not raw:
-            raise ValueError(
-                "{} path is empty".format(field_name)
-            )
-        if raw.startswith("game:"):
-            raise ValueError(
-                "{} must be Distribution-relative, not a game: pointer: {}".format(
-                    field_name,
-                    raw,
-                )
-            )
-        if "\\" in raw:
-            raise ValueError(
-                "{} must use forward slashes: {}".format(
-                    field_name,
-                    raw,
-                )
-            )
-
-        root = distribution.resolve()
-        candidate = (root / raw).resolve()
-        try:
-            candidate.relative_to(root)
-        except ValueError as exc:
-            raise ValueError(
-                "{} escapes Distribution root: {}".format(
-                    field_name,
-                    raw,
-                )
-            ) from exc
-
-        if not candidate.is_file():
-            raise FileNotFoundError(
-                "{} points to missing file: {}".format(
-                    field_name,
-                    raw,
-                )
-            )
-
-        return candidate
 
     @staticmethod
     def _distribution_root(

@@ -3,14 +3,16 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from ..bootstrap.models import InitComplete
-from ..pointers import extract_game_paths, game_path
 from ..scenarios import CharacterManifestIndex, ScenarioPack
 from ..workspace import SessionWorkspace
 
 
+_POINTER_RE = re.compile(
+    r"(?:(?:entities|story|flags|assets)/[^\s,;|\]\)]+)"
+)
 _ENTITY_SPLIT_RE = re.compile(r"[,;|\n、]+")
 
 
@@ -348,8 +350,8 @@ class ContextBuilder:
         self,
         init_complete: InitComplete,
     ) -> set:
-        path = game_path(init_complete.main_character)
-        if path is None:
+        path = init_complete.main_character.strip()
+        if not path or path == "none":
             return set()
         return {path}
 
@@ -357,8 +359,8 @@ class ContextBuilder:
         self,
         init_complete: InitComplete,
     ) -> str:
-        path = game_path(init_complete.main_character)
-        if path is None:
+        path = init_complete.main_character.strip()
+        if not path or path == "none":
             return ""
 
         chunks = ["# PLAYER CHARACTER"]
@@ -394,7 +396,7 @@ class ContextBuilder:
         seen = set(exclude)
 
         for value in init_complete.current.values():
-            for path in extract_game_paths(value):
+            for path in _extract_pointers(value):
                 if path in seen or _is_hidden(path):
                     continue
                 if (
@@ -477,6 +479,15 @@ class ContextBuilder:
             "\n\n"
             + "\n\n".join(chunks)
         )
+
+
+def _extract_pointers(value: object) -> Iterable[str]:
+    if not isinstance(value, str):
+        return ()
+    return tuple(
+        match.group(0).rstrip(".:、。")
+        for match in _POINTER_RE.finditer(value)
+    )
 
 
 def _extract_entity_names(

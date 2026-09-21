@@ -91,17 +91,6 @@ class AgentFilesystem:
         )
 
     def save_write(self, path: str, content: str) -> str:
-        normalized = str(path).replace("\\", "/")
-        while normalized.startswith("./"):
-            normalized = normalized[2:]
-
-        if normalized == "init완료.md":
-            from ..bootstrap.models import InitComplete
-
-            content = InitComplete.parse(
-                content
-            ).render()
-
         self.workspace.save.write_text(path, content)
         return "saved: {}".format(path)
 

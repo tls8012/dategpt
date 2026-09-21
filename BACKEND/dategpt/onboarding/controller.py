@@ -8,7 +8,6 @@ from typing import Optional
 
 from ..bootstrap import InitializationResult, SessionInitializer
 from ..host import RuntimeHost
-from ..pointers import game_path, game_pointer
 from ..scenarios import ScenarioPack
 
 
@@ -93,7 +92,7 @@ class OnboardingController:
             self.state = OnboardingState(
                 phase="character_creation",
                 player_character_mode="original",
-                main_character="game:entities/main_character.md",
+                main_character="entities/main_character.md",
             )
             self._save()
             return self.state
@@ -108,10 +107,10 @@ class OnboardingController:
             return self.state
 
         if normalized == "existing":
-            path = game_path(main_character)
-            if path is None or not path.startswith("entities/"):
+            path = str(main_character or "").strip()
+            if not path:
                 raise ValueError(
-                    "existing mode requires an entities/... path"
+                    "existing mode requires main_character path"
                 )
             if _is_hidden(path):
                 raise ValueError(
@@ -123,7 +122,7 @@ class OnboardingController:
             self.state = OnboardingState(
                 phase="ready_to_finalize",
                 player_character_mode="existing",
-                main_character=game_pointer(path),
+                main_character=path,
             )
             self._save()
             return self.state
@@ -157,7 +156,7 @@ class OnboardingController:
                 draft,
             )
             play_mode = "player"
-            main_character = "game:entities/main_character.md"
+            main_character = "entities/main_character.md"
 
         elif mode == "existing":
             play_mode = "player"

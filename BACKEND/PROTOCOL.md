@@ -194,35 +194,3 @@ through GitHub Actions. DateGPT resolves prompts in this order:
 
 The managed DateGPT copy currently contains only `runtime.md` and
 `onboarding.md`.
-
-
-## Cartridge source of truth
-
-Mounted cartridge content is the Distribution source of truth at runtime.
-DateGPT no longer creates or resolves `games/GAME_NAME/game_source.md`.
-Scenario content is read directly from the mounted local `ScenarioPack`.
-Legacy `game_source` fields in existing `init완료.md` files are accepted
-for compatibility and omitted on subsequent renders.
-
-## Runtime path contract
-
-The mounted Distribution directory containing `file-manifest.md` is the
-scenario root. Author-side manifest/entity/story paths are relative to that
-directory. Packaged cartridges should declare `CONTENT_ROOT: .`.
-
-`init완료.md` uses logical overlay pointers rather than filesystem-relative
-links. New saves write them as `game:<path>`, for example:
-
-```text
-main_character: game:entities/main_character.md
-active_story: game:story/전학 첫날.md
-```
-
-A `game:` pointer resolves the same relative path against the mounted
-Distribution and the current GAME_ID Save overlay. Existing saves with legacy
-bare paths such as `story/전학 첫날.md` remain readable and are normalized
-when rendered again. Paths containing spaces are supported.
-
-Agent tool paths do not use the `game:` prefix:
-`content_*` paths are Distribution-root-relative, `save_*` paths are
-current-Save-root-relative, and `scratchpad_*` paths are scratchpad-relative.

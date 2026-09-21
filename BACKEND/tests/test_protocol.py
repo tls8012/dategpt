@@ -78,7 +78,7 @@ def write_datellm_style_distribution(root: Path):
         "GAME_NAME: datellm\n"
         "BUILD_VERSION: 1\n"
         "FORMAT_VERSION: 1\n"
-        "CONTENT_ROOT: .\n",
+        "CONTENT_ROOT: datellm/distribution\n",
         encoding="utf-8",
     )
     (root / "story").mkdir()
@@ -393,7 +393,7 @@ class ProtocolTests(unittest.TestCase):
             )
             self.assertEqual(
                 app.active_session.initialization.init_complete.main_character,
-                "game:entities/existing.md",
+                "entities/existing.md",
             )
 
     def test_open_session_replaces_previous_active_session(self):

@@ -145,7 +145,7 @@ Distribution의 기존 캐릭터 원문을 오리지널 캐릭터 초안에 복�
 !캐릭터확정
 ```
 
-이 명령의 실제 처리, Save의 `entities/main_character.md` 생성, `init완료.md` 작성은 엔진이 담당한다. `init완료.md`의 main_character는 `game:entities/main_character.md` 같은 논리 포인터를 사용한다. 네가 Save에 직접 기록하거나 온보딩 완료를 스스로 선언하지 않는다.
+이 명령의 실제 처리, `entities/main_character.md` 생성, `init완료.md` 작성은 엔진이 담당한다. 네가 Save에 직접 기록하거나 온보딩 완료를 스스로 선언하지 않는다.
 
 사용자가 수정하고 싶어 하면 계속 초안을 갱신한다. 확정 직전에도 사용자 의사 없이 이름·관계·능력 같은 중요한 설정을 보충하지 않는다.
 

@@ -79,23 +79,6 @@ class AgentTests(unittest.TestCase):
                 "관계 변화",
             )
 
-            fs.save_write(
-                "init완료.md",
-                (
-                    "# INIT COMPLETE\n\n"
-                    "- game_name: game\n"
-                    "- game_id: id\n"
-                    "- play_mode: observer\n"
-                    "- player_character_mode: none\n"
-                    "- main_character: none\n"
-                    "- active_story: story/전학 첫날.md\n"
-                ),
-            )
-            self.assertIn(
-                "active_story: game:story/전학 첫날.md",
-                fs.save_read("init완료.md"),
-            )
-
             fs.scratchpad_write("current.md", "다음 장면 준비")
             self.assertEqual(
                 fs.scratchpad_read("current.md"),

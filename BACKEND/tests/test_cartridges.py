@@ -21,11 +21,7 @@ def write_datellm_distribution(
         "GAME_NAME: datellm\n"
         "BUILD_VERSION: {}\n"
         "FORMAT_VERSION: {}\n"
-        "CONTENT_ROOT: .\n"
-        "character_manifest: character_manifest.md\n"
-        "welcome: story/welcome.md\n"
-        "story_manifest: story/story_manifest.md\n"
-        "start_story: story/전학 첫날.md\n".format(
+        "CONTENT_ROOT: datellm/distribution\n".format(
             build_version,
             format_version,
         ),
@@ -54,14 +50,6 @@ def write_datellm_distribution(
     (root / "story").mkdir()
     (root / "story" / "welcome.md").write_text(
         "welcome",
-        encoding="utf-8",
-    )
-    (root / "story" / "story_manifest.md").write_text(
-        "# STORY MANIFEST",
-        encoding="utf-8",
-    )
-    (root / "story" / "전학 첫날.md").write_text(
-        "# FIRST DAY",
         encoding="utf-8",
     )
 
@@ -165,108 +153,6 @@ class CartridgeTests(unittest.TestCase):
                 ).build_version,
                 "10",
             )
-
-    def test_declared_story_path_with_spaces_is_valid(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "distribution"
-            write_datellm_distribution(source)
-
-            inspected = CartridgeLibrary(
-                Path(tmp) / "installed"
-            ).inspect_directory(source)
-
-            self.assertEqual(
-                inspected.content_root,
-                ".",
-            )
-
-    def test_missing_declared_entrypoint_is_rejected(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "distribution"
-            write_datellm_distribution(source)
-            (
-                source / "story" / "전학 첫날.md"
-            ).unlink()
-
-            with self.assertRaises(FileNotFoundError):
-                CartridgeLibrary(
-                    Path(tmp) / "installed"
-                ).inspect_directory(source)
-
-    def test_broken_character_manifest_path_is_rejected(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "distribution"
-            write_datellm_distribution(source)
-            (
-                source / "character_manifest.md"
-            ).write_text(
-                "Missing | path: entities/characters/없음.md\n",
-                encoding="utf-8",
-            )
-
-            with self.assertRaises(FileNotFoundError):
-                CartridgeLibrary(
-                    Path(tmp) / "installed"
-                ).inspect_directory(source)
-
-    def test_manifest_path_cannot_escape_distribution(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "distribution"
-            write_datellm_distribution(source)
-            manifest = (
-                source / "file-manifest.md"
-            ).read_text(encoding="utf-8")
-            manifest = manifest.replace(
-                "welcome: story/welcome.md",
-                "welcome: ../outside.md",
-            )
-            (
-                source / "file-manifest.md"
-            ).write_text(
-                manifest,
-                encoding="utf-8",
-            )
-
-            with self.assertRaises(ValueError):
-                CartridgeLibrary(
-                    Path(tmp) / "installed"
-                ).inspect_directory(source)
-
-    def test_legacy_content_root_is_rejected(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "distribution"
-            write_datellm_distribution(source)
-            manifest_path = source / "file-manifest.md"
-            manifest_path.write_text(
-                manifest_path.read_text(encoding="utf-8").replace(
-                    "CONTENT_ROOT: .",
-                    "CONTENT_ROOT: datellm/distribution",
-                ),
-                encoding="utf-8",
-            )
-
-            with self.assertRaises(ValueError):
-                CartridgeLibrary(
-                    Path(tmp) / "installed"
-                ).inspect_directory(source)
-
-
-    def test_broken_context_manifest_core_file_is_rejected(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "distribution"
-            write_datellm_distribution(source)
-            (
-                source / "context_manifest.json"
-            ).write_text(
-                '{"core_files": ["entities/characters/없음.md"]}',
-                encoding="utf-8",
-            )
-
-            with self.assertRaises(FileNotFoundError):
-                CartridgeLibrary(
-                    Path(tmp) / "installed"
-                ).inspect_directory(source)
-
 
 
 if __name__ == "__main__":

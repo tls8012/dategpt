@@ -4,7 +4,7 @@ from pathlib import Path
 
 from dategpt.bootstrap import (
     GameInstanceSelectionRequired,
-    InitComplete,
+    ScenarioSourceConflict,
     SessionInitializer,
 )
 from dategpt.controls import ControlRouter, ControlState
@@ -15,7 +15,7 @@ from dategpt.scenarios import ScenarioPack
 from dategpt.workspace import SessionWorkspace
 
 
-def make_scenario(root: Path, game_name="테스트게임", content_root="."):
+def make_scenario(root: Path, game_name="테스트게임", content_root="content/"):
     root.mkdir(parents=True, exist_ok=True)
     (root / "file-manifest.md").write_text(
         "# FILE MANIFEST\n\n"
@@ -147,12 +147,14 @@ class FoundationTests(unittest.TestCase):
             )
             result = initializer.prepare(
                 ScenarioPack(scenario_root),
+                distribution_url="https://example.invalid/game",
+                manifest_url="https://example.invalid/game/file-manifest.md",
             )
 
             self.assertTrue(result.is_new)
             self.assertTrue(result.needs_setup)
             game_root = base / "games" / "테스트게임"
-            self.assertFalse((game_root / "game_source.md").exists())
+            self.assertTrue((game_root / "game_source.md").exists())
             save_root = game_root / result.game_id
             for name in ("entities", "story", "flags", "hidden", "assets"):
                 self.assertTrue((save_root / name).is_dir())
@@ -172,6 +174,8 @@ class FoundationTests(unittest.TestCase):
             )
             first = initializer.prepare(
                 ScenarioPack(scenario_root),
+                distribution_url="https://example.invalid/game",
+                manifest_url="https://example.invalid/manifest",
             )
             controls = ControlState(
                 initiative="high",
@@ -200,46 +204,6 @@ class FoundationTests(unittest.TestCase):
             self.assertTrue(resumed.controls.dev_commands)
             self.assertEqual(resumed.init_complete.current["location"], "station")
 
-    def test_initializer_migrates_legacy_init_paths_on_resume(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp)
-            scenario_root = base / "scenario"
-            make_scenario(scenario_root)
-
-            initializer = SessionInitializer(
-                save_base=base / "games",
-                runtime_base=base / "runtime",
-            )
-            first = initializer.prepare(
-                ScenarioPack(scenario_root),
-            )
-            legacy = (
-                "# INIT COMPLETE\n\n"
-                "- game_name: 테스트게임\n"
-                "- game_id: {}\n"
-                "- play_mode: observer\n"
-                "- player_character_mode: none\n"
-                "- main_character: none\n"
-                "- active_story: story/전학 첫날.md\n"
-            ).format(first.game_id)
-            first.workspace.save.write_text(
-                "init완료.md",
-                legacy,
-            )
-
-            resumed = initializer.prepare(
-                ScenarioPack(scenario_root),
-            )
-
-            self.assertEqual(
-                resumed.init_complete.current["active_story"],
-                "game:story/전학 첫날.md",
-            )
-            self.assertIn(
-                "active_story: game:story/전학 첫날.md",
-                resumed.workspace.save.read_text("init완료.md"),
-            )
-
     def test_initializer_requires_choice_for_multiple_instances(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
@@ -257,46 +221,20 @@ class FoundationTests(unittest.TestCase):
                 initializer.prepare(pack)
             self.assertEqual(len(caught.exception.game_ids), 2)
 
+    def test_initializer_rejects_registered_source_conflict(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            scenario_root = base / "scenario"
+            make_scenario(scenario_root)
+            initializer = SessionInitializer(
+                save_base=base / "games",
+                runtime_base=base / "runtime",
+            )
+            pack = ScenarioPack(scenario_root)
+            initializer.prepare(pack, distribution_url="A")
 
-    def test_init_complete_drops_legacy_game_source_field(self):
-        parsed = InitComplete.parse(
-            "# INIT COMPLETE\n\n"
-            "- game_name: legacy\n"
-            "- game_id: abc123\n"
-            "- game_source: ../game_source.md\n"
-            "- play_mode: observer\n"
-            "- player_character_mode: none\n"
-            "- main_character: none\n"
-        )
-
-        rendered = parsed.render()
-        self.assertNotIn("game_source", rendered)
-        self.assertEqual(parsed.game_name, "legacy")
-        self.assertEqual(parsed.game_id, "abc123")
-
-    def test_init_complete_normalizes_logical_game_pointers(self):
-        parsed = InitComplete.parse(
-            "# INIT COMPLETE\n\n"
-            "- game_name: g\n"
-            "- game_id: id\n"
-            "- main_character: entities/main_character.md\n"
-            "- active_story: story/전학 첫날.md\n"
-        )
-
-        self.assertEqual(
-            parsed.main_character,
-            "game:entities/main_character.md",
-        )
-        self.assertEqual(
-            parsed.current["active_story"],
-            "game:story/전학 첫날.md",
-        )
-        rendered = parsed.render()
-        self.assertIn(
-            "- active_story: game:story/전학 첫날.md",
-            rendered,
-        )
-
+            with self.assertRaises(ScenarioSourceConflict):
+                initializer.prepare(pack, distribution_url="B", new_game=True)
 
 
 if __name__ == "__main__":
