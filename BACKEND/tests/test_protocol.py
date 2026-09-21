@@ -40,10 +40,20 @@ class FakeRunner:
             }
         )
         reply = "AI: " + text
+        segments = (
+            {
+                "kind": "narration",
+                "speaker": "",
+                "text": reply,
+            },
+        )
         self.host.workspace.history.append(
             {
                 "role": "assistant",
                 "text": reply,
+                "segments": [
+                    dict(item) for item in segments
+                ],
                 "prompt_fingerprint": "test",
             }
         )
@@ -56,6 +66,7 @@ class FakeRunner:
             text=reply,
             prompt_fingerprint="test",
             raw_result={},
+            segments=segments,
         )
 
     def run_maintenance(self, instruction):
@@ -82,10 +93,18 @@ class FakeRunner:
                 "record_history": record_history,
             }
         )
+        reply = "ONBOARDING: " + text
         return AgentRunResult(
-            text="ONBOARDING: " + text,
+            text=reply,
             prompt_fingerprint="onboarding-test",
             raw_result={},
+            segments=(
+                {
+                    "kind": "system",
+                    "speaker": "",
+                    "text": reply,
+                },
+            ),
         )
 
     def record_assistant_message(
@@ -689,6 +708,120 @@ class ProtocolTests(unittest.TestCase):
             self.assertEqual(
                 regenerated[0]["text"],
                 "AI: again",
+            )
+
+    def test_play_emits_structured_presentation_events(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+
+            emitted = []
+            reply = app.handle(
+                {
+                    "type": "play",
+                    "request_id": "present-1",
+                    "text": "hello",
+                },
+                emit=emitted.append,
+            )
+
+            self.assertEqual(
+                [item["type"] for item in emitted],
+                [
+                    "status",
+                    "presentation_start",
+                    "presentation_segment",
+                    "presentation_end",
+                ],
+            )
+            self.assertEqual(
+                emitted[2]["segment"]["text"],
+                "AI: hello",
+            )
+            self.assertEqual(
+                reply[0]["segments"][0]["kind"],
+                "narration",
+            )
+
+    def test_resume_exposes_recent_structured_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, scenario, prompts, opened = self.make_open_app(base)
+            game_id = opened[0]["game_id"]
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+            app.handle({
+                "type": "play",
+                "text": "remember me",
+            })
+
+            resumed = app.handle({
+                "type": "open_session",
+                "scenario_path": str(scenario),
+                "prompt_path": str(prompts),
+                "game_id": game_id,
+            })[0]
+
+            self.assertEqual(
+                resumed["type"],
+                "session_opened",
+            )
+            assistant = [
+                item
+                for item in resumed["recent_history"]
+                if item.get("role") == "assistant"
+            ][-1]
+            self.assertEqual(
+                assistant["segments"][0]["text"],
+                "AI: remember me",
+            )
+            self.assertEqual(
+                resumed["turns"][-1]["user_text"],
+                "remember me",
+            )
+
+    def test_bulk_controls_persist_in_active_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+
+            changed = app.handle({
+                "type": "set_controls",
+                "controls": {
+                    "language": "English",
+                    "initiative": "high",
+                    "world_consistency": "low",
+                },
+            })
+            controls = changed[0]["controls"]
+
+            self.assertEqual(
+                controls["language"],
+                "English",
+            )
+            self.assertEqual(
+                controls["initiative"],
+                "high",
+            )
+            self.assertEqual(
+                controls["world_consistency"],
+                "low",
+            )
+            self.assertEqual(
+                app.active_session.workspace.load_controls()[
+                    "language"
+                ],
+                "English",
             )
 
     def test_model_commands_work_without_active_session(self):
