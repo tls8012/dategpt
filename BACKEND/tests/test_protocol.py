@@ -18,11 +18,55 @@ class FakeRunner:
         self.recorded_assistant = []
 
     def run_turn(self, text):
+        if text == "__fail__":
+            raise RuntimeError("forced test failure")
+
         self.turns.append(text)
+        transaction = self.host.workspace.turns.begin()
+        transaction.capture(
+            "save",
+            self.host.workspace.save,
+            "story/state.md",
+        )
+        self.host.workspace.save.write_text(
+            "story/state.md",
+            text,
+        )
+        self.host.workspace.history.append(
+            {
+                "role": "user",
+                "text": text,
+                "prompt_fingerprint": "test",
+            }
+        )
+        reply = "AI: " + text
+        segments = (
+            {
+                "kind": "narration",
+                "speaker": "",
+                "text": reply,
+            },
+        )
+        self.host.workspace.history.append(
+            {
+                "role": "assistant",
+                "text": reply,
+                "segments": [
+                    dict(item) for item in segments
+                ],
+                "prompt_fingerprint": "test",
+            }
+        )
+        transaction.commit(
+            user_text=text,
+            assistant_text=reply,
+            prompt_fingerprint="test",
+        )
         return AgentRunResult(
-            text="AI: " + text,
+            text=reply,
             prompt_fingerprint="test",
             raw_result={},
+            segments=segments,
         )
 
     def run_maintenance(self, instruction):
@@ -49,10 +93,18 @@ class FakeRunner:
                 "record_history": record_history,
             }
         )
+        reply = "ONBOARDING: " + text
         return AgentRunResult(
-            text="ONBOARDING: " + text,
+            text=reply,
             prompt_fingerprint="onboarding-test",
             raw_result={},
+            segments=(
+                {
+                    "kind": "system",
+                    "speaker": "",
+                    "text": reply,
+                },
+            ),
         )
 
     def record_assistant_message(
@@ -61,12 +113,14 @@ class FakeRunner:
         *,
         prompt_fingerprint,
         phase,
+        segments=(),
     ):
         self.recorded_assistant.append(
             {
                 "text": text,
                 "prompt_fingerprint": prompt_fingerprint,
                 "phase": phase,
+                "segments": list(segments),
             }
         )
 
@@ -107,7 +161,8 @@ def write_scenario(root: Path):
     (root / "file-manifest.md").write_text(
         "# FILE MANIFEST\n\n"
         "- `GAME_NAME: protocol-test`\n"
-        "- `CONTENT_ROOT: .`\n",
+        "- `CONTENT_ROOT: .`\n"
+        "- `control.gender: unspecified`\n",
         encoding="utf-8",
     )
     (root / "story").mkdir()
@@ -305,7 +360,7 @@ class ProtocolTests(unittest.TestCase):
             statuses = []
             reply = app.handle(
                 {
-                    "type": "say",
+                    "type": "play",
                     "request_id": "2",
                     "text": "어떤 캐릭터를 만들 수 있어?",
                 },
@@ -326,7 +381,7 @@ class ProtocolTests(unittest.TestCase):
             app, _, _, _ = self.make_open_app(base)
 
             selected = app.handle({
-                "type": "say",
+                "type": "play",
                 "request_id": "2",
                 "text": "!새캐릭터",
             })
@@ -336,7 +391,7 @@ class ProtocolTests(unittest.TestCase):
             )
 
             missing = app.handle({
-                "type": "say",
+                "type": "play",
                 "request_id": "3",
                 "text": "!캐릭터확정",
             })
@@ -351,7 +406,7 @@ class ProtocolTests(unittest.TestCase):
             )
 
             completed = app.handle({
-                "type": "say",
+                "type": "play",
                 "request_id": "4",
                 "text": "!캐릭터확정",
             })
@@ -396,6 +451,37 @@ class ProtocolTests(unittest.TestCase):
                 "entities/existing.md",
             )
 
+    def test_list_game_instances_does_not_create_a_save(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app = self.make_app(base)
+
+            empty = app.handle({
+                "type": "list_game_instances",
+                "request_id": "list-1",
+                "game_name": "protocol-test",
+            })
+            self.assertEqual(
+                empty[0]["type"],
+                "game_instance_list",
+            )
+            self.assertEqual(empty[0]["game_ids"], [])
+
+            game_root = app.save_base / "protocol-test"
+            game_root.mkdir(parents=True)
+            (game_root / "save-a").mkdir()
+            (game_root / "save-b").mkdir()
+
+            listed = app.handle({
+                "type": "list_game_instances",
+                "request_id": "list-2",
+                "game_name": "protocol-test",
+            })
+            self.assertEqual(
+                listed[0]["game_ids"],
+                ["save-a", "save-b"],
+            )
+
     def test_open_session_replaces_previous_active_session(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
@@ -436,13 +522,385 @@ class ProtocolTests(unittest.TestCase):
                 second_id,
             )
 
+    def test_turn_rollback_restores_sparse_save_and_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+
+            first = app.handle({
+                "type": "play",
+                "text": "first",
+            })
+            second = app.handle({
+                "type": "play",
+                "text": "second",
+            })
+            self.assertEqual(first[0]["text"], "AI: first")
+            self.assertEqual(second[0]["text"], "AI: second")
+
+            turns = app.handle({
+                "type": "list_turns",
+            })[0]["turns"]
+            self.assertEqual(len(turns), 2)
+            self.assertEqual(
+                app.active_session.workspace.save.read_text(
+                    "story/state.md"
+                ),
+                "second",
+            )
+
+            rolled_back = app.handle({
+                "type": "rollback_turn",
+                "turn_id": turns[1]["turn_id"],
+            })
+            self.assertEqual(
+                rolled_back[0]["type"],
+                "turn_rolled_back",
+            )
+            self.assertEqual(
+                app.active_session.workspace.save.read_text(
+                    "story/state.md"
+                ),
+                "first",
+            )
+            self.assertEqual(
+                len(
+                    app.active_session.workspace.history.tail(
+                        100
+                    )
+                ),
+                2,
+            )
+
+    def test_edit_turn_discards_future_and_creates_new_head(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+            app.handle({"type": "play", "text": "first"})
+            app.handle({"type": "play", "text": "second"})
+            app.handle({"type": "play", "text": "third"})
+
+            turns = app.handle({
+                "type": "list_turns",
+            })[0]["turns"]
+            edited = app.handle({
+                "type": "edit_turn",
+                "turn_id": turns[1]["turn_id"],
+                "text": "changed",
+            })
+
+            self.assertEqual(
+                edited[0]["type"],
+                "turn_edited",
+            )
+            self.assertEqual(
+                edited[0]["text"],
+                "AI: changed",
+            )
+            self.assertEqual(
+                [
+                    item["user_text"]
+                    for item in edited[0]["turns"]
+                ],
+                ["first", "changed"],
+            )
+            self.assertEqual(
+                app.active_session.workspace.save.read_text(
+                    "story/state.md"
+                ),
+                "changed",
+            )
+
+    def test_failed_turn_edit_restores_original_head(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+            app.handle({"type": "play", "text": "first"})
+            app.handle({"type": "play", "text": "second"})
+
+            turns = app.handle({
+                "type": "list_turns",
+            })[0]["turns"]
+            failed = app.handle({
+                "type": "edit_turn",
+                "turn_id": turns[0]["turn_id"],
+                "text": "__fail__",
+            })
+            self.assertEqual(
+                failed[0]["type"],
+                "error",
+            )
+
+            restored = app.handle({
+                "type": "list_turns",
+            })[0]["turns"]
+            self.assertEqual(
+                [item["user_text"] for item in restored],
+                ["first", "second"],
+            )
+            self.assertEqual(
+                app.active_session.workspace.save.read_text(
+                    "story/state.md"
+                ),
+                "second",
+            )
+            history = (
+                app.active_session.workspace.history.tail(100)
+            )
+            self.assertEqual(
+                [item["text"] for item in history[-4:]],
+                [
+                    "first",
+                    "AI: first",
+                    "second",
+                    "AI: second",
+                ],
+            )
+
+    def test_regenerate_turn_reuses_original_user_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+            app.handle({"type": "play", "text": "again"})
+            turn_id = app.handle({
+                "type": "list_turns",
+            })[0]["turns"][0]["turn_id"]
+
+            regenerated = app.handle({
+                "type": "regenerate_turn",
+                "turn_id": turn_id,
+            })
+            self.assertEqual(
+                regenerated[0]["type"],
+                "turn_regenerated",
+            )
+            self.assertEqual(
+                regenerated[0]["user_text"],
+                "again",
+            )
+            self.assertEqual(
+                regenerated[0]["text"],
+                "AI: again",
+            )
+
+    def test_play_emits_structured_presentation_events(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+
+            emitted = []
+            reply = app.handle(
+                {
+                    "type": "play",
+                    "request_id": "present-1",
+                    "text": "hello",
+                },
+                emit=emitted.append,
+            )
+
+            self.assertEqual(
+                [item["type"] for item in emitted],
+                [
+                    "status",
+                    "presentation_start",
+                    "presentation_segment",
+                    "presentation_end",
+                ],
+            )
+            self.assertEqual(
+                emitted[2]["segment"]["text"],
+                "AI: hello",
+            )
+            self.assertEqual(
+                reply[0]["segments"][0]["kind"],
+                "narration",
+            )
+
+    def test_resume_exposes_recent_structured_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, scenario, prompts, opened = self.make_open_app(base)
+            game_id = opened[0]["game_id"]
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+            app.handle({
+                "type": "play",
+                "text": "remember me",
+            })
+
+            resumed = app.handle({
+                "type": "open_session",
+                "scenario_path": str(scenario),
+                "prompt_path": str(prompts),
+                "game_id": game_id,
+            })[0]
+
+            self.assertEqual(
+                resumed["type"],
+                "session_opened",
+            )
+            assistant = [
+                item
+                for item in resumed["recent_history"]
+                if item.get("role") == "assistant"
+            ][-1]
+            self.assertEqual(
+                assistant["segments"][0]["text"],
+                "AI: remember me",
+            )
+            self.assertEqual(
+                resumed["turns"][-1]["user_text"],
+                "remember me",
+            )
+
+    def test_bulk_controls_persist_in_active_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+
+            self.assertEqual(
+                app.active_session.host.controls.extra[
+                    "gender"
+                ],
+                "unspecified",
+            )
+
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+
+            changed = app.handle({
+                "type": "set_controls",
+                "controls": {
+                    "language": "English",
+                    "initiative": "high",
+                    "world_consistency": "low",
+                    "gender": "female",
+                },
+            })
+            controls = changed[0]["controls"]
+
+            self.assertEqual(
+                controls["language"],
+                "English",
+            )
+            self.assertEqual(
+                controls["initiative"],
+                "high",
+            )
+            self.assertEqual(
+                controls["world_consistency"],
+                "low",
+            )
+            self.assertEqual(
+                app.active_session.workspace.load_controls()[
+                    "language"
+                ],
+                "English",
+            )
+            self.assertEqual(
+                controls["gender"],
+                "female",
+            )
+            self.assertEqual(
+                app.active_session.initialization.init_complete.extra_fields[
+                    "gender"
+                ],
+                "female",
+            )
+            self.assertIn(
+                "- gender: female",
+                app.active_session.workspace.save.read_text(
+                    "init완료.md"
+                ),
+            )
+
+    def test_play_text_scenario_control_bypasses_llm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+
+            before_turns = list(
+                app.active_session.runner.turns
+            )
+            result = app.handle({
+                "type": "play",
+                "text": "!설정 gender female",
+            })
+
+            self.assertEqual(
+                app.active_session.host.controls.extra[
+                    "gender"
+                ],
+                "female",
+            )
+            self.assertEqual(
+                app.active_session.runner.turns,
+                before_turns,
+            )
+            self.assertEqual(
+                result[0]["type"],
+                "control_state",
+            )
+            self.assertEqual(
+                result[-1]["type"],
+                "reply",
+            )
+
     def test_model_commands_work_without_active_session(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             app = self.make_app(base)
 
             result = app.handle({
-                "type": "say",
+                "type": "play",
                 "request_id": "m1",
                 "text": "!모델 anthropic claude-test",
             })

@@ -9,6 +9,7 @@ from ..controls import ControlState
 from ..fs import RootedTextStore, safe_path_segment
 from ..scenarios import ScenarioPack
 from ..workspace import SessionWorkspace
+from .markdown import parse_markdown_fields
 from .models import InitComplete, ScenarioManifest
 
 
@@ -107,15 +108,39 @@ class SessionInitializer:
 
         init_complete = None
         if workspace.save.exists("init완료.md"):
-            init_complete = InitComplete.parse(
-                workspace.save.read_text("init완료.md")
+            init_path = workspace.save.resolve(
+                "init완료.md"
             )
+            init_text = workspace.save.read_text(
+                "init완료.md"
+            )
+            try:
+                init_complete = InitComplete.parse(
+                    init_text
+                )
+            except ValueError as exc:
+                parsed_keys = sorted(
+                    parse_markdown_fields(
+                        init_text
+                    ).keys()
+                )
+                raise ValueError(
+                    "{} [path={}, parsed_keys={}]".format(
+                        exc,
+                        init_path,
+                        parsed_keys,
+                    )
+                ) from exc
             if init_complete.game_name != game_name:
                 raise ValueError("init완료.md game_name does not match scenario")
             if init_complete.game_id != game_id:
                 raise ValueError("init완료.md game_id does not match directory")
 
-        controls = self._restore_controls(workspace, init_complete)
+        controls = self._restore_controls(
+            workspace,
+            init_complete,
+            manifest,
+        )
 
         return InitializationResult(
             is_new=is_new,
@@ -153,6 +178,12 @@ class SessionInitializer:
             main_character,
         )
         state = controls or result.controls
+        for name, value in (
+            result.manifest.control_defaults.items()
+        ):
+            state.extra.setdefault(name, value)
+
+        extra_fields = dict(state.extra)
 
         init_complete = InitComplete(
             game_name=result.game_name,
@@ -166,6 +197,7 @@ class SessionInitializer:
             dev_commands=state.dev_commands,
             paused=state.paused,
             current=dict(current or {}),
+            extra_fields=extra_fields,
         )
         result.workspace.save.write_text(
             "init완료.md",
@@ -175,6 +207,11 @@ class SessionInitializer:
         result.init_complete = init_complete
         result.controls = state
         return init_complete
+
+    def list_instance_ids(self, game_name: str):
+        """Return existing save instance ids without opening or creating one."""
+        safe_game_name = safe_path_segment(game_name, "GAME_NAME")
+        return tuple(self._list_instance_ids(safe_game_name))
 
     def _list_instance_ids(self, game_name: str):
         game_root = self.registry.resolve(game_name)
@@ -227,8 +264,10 @@ class SessionInitializer:
         self,
         workspace: SessionWorkspace,
         init_complete: Optional[InitComplete],
+        manifest: ScenarioManifest,
     ) -> ControlState:
-        values = {}
+        values = dict(manifest.control_defaults)
+
         if init_complete is not None:
             values.update(init_complete.control_values())
 

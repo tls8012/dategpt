@@ -19,7 +19,11 @@ def make_scenario(root: Path, game_name="테스트게임", content_root="content
     (root / "file-manifest.md").write_text(
         "# FILE MANIFEST\n\n"
         "- `GAME_NAME: {}`\n"
-        "- `CONTENT_ROOT: {}`\n".format(game_name, content_root),
+        "- `CONTENT_ROOT: {}`\n"
+        "- `control.gender: unspecified`\n".format(
+            game_name,
+            content_root,
+        ),
         encoding="utf-8",
     )
     (root / "character_manifest.md").write_text(
@@ -34,6 +38,57 @@ def make_scenario(root: Path, game_name="테스트게임", content_root="content
 
 
 class FoundationTests(unittest.TestCase):
+    def test_markdown_fields_accept_asterisk_and_plus_bullets(self):
+        from dategpt.bootstrap.markdown import (
+            parse_markdown_fields,
+        )
+
+        parsed = parse_markdown_fields(
+            "* game_name: datellm\n"
+            "* game_id: abc123\n"
+            "+ gender: female\n"
+        )
+        self.assertEqual(parsed["game_name"], "datellm")
+        self.assertEqual(parsed["game_id"], "abc123")
+        self.assertEqual(parsed["gender"], "female")
+
+    def test_markdown_fields_recover_windows_copy_artifacts(self):
+        from dategpt.bootstrap.markdown import (
+            parse_markdown_fields,
+        )
+
+        parsed = parse_markdown_fields(
+            "\ufeff- game\\_name: datellm\r\n"
+            "- game_\\id: abc123\r\n"
+            "- \u200bgender: female\r\n"
+        )
+        self.assertEqual(parsed["game_name"], "datellm")
+        self.assertEqual(parsed["game_id"], "abc123")
+        self.assertEqual(parsed["gender"], "female")
+
+    def test_markdown_fields_accept_emphasized_keys(self):
+        from dategpt.bootstrap.markdown import (
+            parse_markdown_fields,
+        )
+
+        parsed = parse_markdown_fields(
+            "- **game_name**: datellm\n"
+            "- *game_id*: abc123\n"
+            "- _gender_: female\n"
+        )
+        self.assertEqual(
+            parsed["game_name"],
+            "datellm",
+        )
+        self.assertEqual(
+            parsed["game_id"],
+            "abc123",
+        )
+        self.assertEqual(
+            parsed["gender"],
+            "female",
+        )
+
     def test_rooted_store_blocks_escape_and_read_only_write(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = RootedTextStore(Path(tmp), writable=False)
@@ -99,6 +154,32 @@ class FoundationTests(unittest.TestCase):
 
         unknown = router.try_handle_text("안녕")
         self.assertFalse(unknown.handled)
+
+        state.set("gender", "unspecified")
+        queried = router.try_handle_text("!설정 gender")
+        self.assertTrue(queried.handled)
+        self.assertEqual(
+            queried.controls["gender"],
+            "unspecified",
+        )
+
+        changed = router.try_handle_text(
+            "!설정 gender female"
+        )
+        self.assertTrue(changed.handled)
+        self.assertEqual(
+            state.extra["gender"],
+            "female",
+        )
+
+        missing = router.try_handle_text(
+            "!설정 typo value"
+        )
+        self.assertTrue(missing.handled)
+        self.assertIn(
+            "등록되지 않은",
+            missing.message,
+        )
 
     def test_host_builds_runtime_only_turn_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -198,6 +279,14 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(resumed.controls.world_consistency, "low")
             self.assertEqual(resumed.controls.language, "English")
             self.assertTrue(resumed.controls.dev_commands)
+            self.assertEqual(
+                resumed.controls.extra["gender"],
+                "unspecified",
+            )
+            self.assertEqual(
+                resumed.init_complete.extra_fields["gender"],
+                "unspecified",
+            )
             self.assertEqual(resumed.init_complete.current["location"], "station")
 
     def test_initializer_requires_choice_for_multiple_instances(self):

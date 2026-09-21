@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 from ..scenarios import ScenarioPack
-from ..workspace import SessionWorkspace
+from ..workspace import SessionWorkspace, TurnTransaction
 
 
 class AgentFilesystem:
@@ -19,9 +19,11 @@ class AgentFilesystem:
         *,
         scenario: ScenarioPack,
         workspace: SessionWorkspace,
+        transaction: Optional[TurnTransaction] = None,
     ) -> None:
         self.scenario = scenario
         self.workspace = workspace
+        self.transaction = transaction
 
     # ------------------------------------------------------------------
     # Scenario / distribution: read only
@@ -72,7 +74,35 @@ class AgentFilesystem:
     # ------------------------------------------------------------------
 
     def save_read(self, path: str) -> str:
-        return self.workspace.save.read_text(path)
+        """Read the effective authored+Save view for one public path.
+
+        Save is an overlay, not a complete copy of Distribution. A missing
+        Save file therefore falls back to the mounted scenario. When both
+        layers exist, return both so the agent can apply the newer overlay on
+        top of the authored baseline instead of accidentally replacing it.
+        """
+        source_exists = self.scenario.exists(path)
+        save_exists = self.workspace.save.exists(path)
+
+        if not source_exists and not save_exists:
+            raise FileNotFoundError(path)
+
+        chunks = []
+        if source_exists:
+            chunks.append(
+                "## SOURCE: {}\n{}".format(
+                    path,
+                    self.scenario.read_text(path),
+                )
+            )
+        if save_exists:
+            chunks.append(
+                "## SAVE OVERLAY: {}\n{}".format(
+                    path,
+                    self.workspace.save.read_text(path),
+                )
+            )
+        return "\n\n".join(chunks)
 
     def save_list(self, path: str = ".") -> List[str]:
         return self.workspace.save.list_files(path)
@@ -91,10 +121,12 @@ class AgentFilesystem:
         )
 
     def save_write(self, path: str, content: str) -> str:
+        self._capture("save", self.workspace.save, path)
         self.workspace.save.write_text(path, content)
         return "saved: {}".format(path)
 
     def save_delete(self, path: str) -> str:
+        self._capture("save", self.workspace.save, path)
         self.workspace.save.delete(path)
         return "deleted: {}".format(path)
 
@@ -122,12 +154,30 @@ class AgentFilesystem:
         )
 
     def scratchpad_write(self, path: str, content: str) -> str:
+        self._capture(
+            "scratchpad",
+            self.workspace.scratchpad,
+            path,
+        )
         self.workspace.scratchpad.write_text(path, content)
         return "scratchpad saved: {}".format(path)
 
     def scratchpad_delete(self, path: str) -> str:
+        self._capture(
+            "scratchpad",
+            self.workspace.scratchpad,
+            path,
+        )
         self.workspace.scratchpad.delete(path)
         return "scratchpad deleted: {}".format(path)
+
+    def _capture(self, store_name: str, store, path: str) -> None:
+        if self.transaction is not None:
+            self.transaction.capture(
+                store_name,
+                store,
+                path,
+            )
 
 
 def _is_hidden_path(path: str) -> bool:

@@ -1,7 +1,7 @@
 # DateGPT Backend Protocol
 
-The Ren'Py frontend and Python backend communicate using newline-delimited JSON
-(JSONL) over stdin/stdout.
+The PySide6 desktop frontend and Python backend communicate using
+newline-delimited JSON (JSONL) over stdin/stdout through Qt QProcess.
 
 DateGPT v1 intentionally supports exactly one active game session per backend
 process. Opening another session replaces the current active session. There is
@@ -43,7 +43,7 @@ Protocol operations:
 Supported modes are original, existing, and observer. Existing mode requires an
 exact public Distribution entity path.
 
-Until a dedicated UI is added, normal say/play input also accepts:
+Normal `play` input also accepts the onboarding compatibility commands:
 
 ```text
 !온보딩
@@ -112,8 +112,46 @@ same retrieval boundary.
 
 ## Gameplay
 
-play (and the compatibility alias say) runs one normal AgentRunner turn.
-Current controls may be repeated on every request.
+`play` is the single gameplay text message. Before a gameplay turn reaches
+the LLM, deterministic model/control commands are given a chance to handle the
+text. Current controls may also be repeated on every request.
+
+Gameplay and onboarding LLM replies use a structured VN response schema. The
+validated response contains ordered `segments`; each segment is narration,
+dialogue, or system text. Dialogue segments carry the visible speaker name
+separately from the text. Every segment also carries an `assets` list containing
+zero or more registered asset IDs selected for that presentation unit.
+
+When an emitter is available, a completed structured response is projected onto
+the JSONL protocol as:
+
+```text
+presentation_start
+presentation_segment
+presentation_segment
+...
+presentation_end
+reply
+```
+
+Each `presentation_segment` is already a frontend display unit, normally one
+complete sentence, and may select multiple registered assets. The final `reply`
+still includes both flattened `text` and `segments` for compatibility.
+Presentation events are emitted only after the single LLM call has completed
+and the structured response has been validated; DateGPT does not stream partial
+structured output.
+
+Restored `session_opened` events include recent conversation history and the
+current rollback turn list so a desktop frontend can reconstruct the visible
+state immediately.
+
+`get_controls`, `set_control`, and `set_controls` are deterministic engine
+operations and do not call the LLM. `set_controls` accepts a controls object
+and is used by the desktop settings panel for language, initiative, and
+world_consistency. Scenario-specific controls are also supported as arbitrary
+string key/value pairs. A Distribution may provide their new-game defaults in
+file-manifest.md as `control.<key>: <default>`; the active value is persisted
+without that prefix in init완료.md and is included in every turn's controls.
 
 checkpoint runs the runtime semantic save command without appending that
 maintenance instruction to ordinary conversation history.
@@ -162,6 +200,11 @@ An installed cartridge can then be mounted without a direct scenario path:
 
 When build_version is omitted, the newest installed build is chosen
 deterministically. `list_cartridges` reports installed builds.
+
+`list_game_instances` accepts a `game_name` and returns a
+`game_instance_list` event with existing GAME_ID values. It is read-only and
+does not create or open a save. The desktop launcher uses it to keep New Game
+and Continue as separate actions.
 
 Direct `scenario_path` mount remains available for development.
 

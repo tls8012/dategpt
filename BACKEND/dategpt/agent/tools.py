@@ -43,7 +43,7 @@ def build_langchain_tools(
 
     @tool("save_read")
     def save_read(path: str) -> str:
-        """Read an exact file from the compatible Save overlay."""
+        """Read one effective path as Distribution baseline plus newer Save overlay."""
 
         return filesystem.save_read(path)
 

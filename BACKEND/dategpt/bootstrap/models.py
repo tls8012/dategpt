@@ -6,6 +6,30 @@ from typing import Any, Dict, Mapping, Optional
 from .markdown import parse_markdown_fields
 
 
+_CORE_CONTROL_NAMES = {
+    "language",
+    "initiative",
+    "world_consistency",
+    "dev_commands",
+    "paused",
+}
+
+_RESERVED_CONTROL_NAMES = _CORE_CONTROL_NAMES | {
+    "game_name",
+    "game_id",
+    "game_source",
+    "play_mode",
+    "player_character_mode",
+    "main_character",
+    "location",
+    "time",
+    "scene",
+    "present_entities",
+    "active_story",
+    "relevant_flags",
+}
+
+
 def _parse_bool(value: str, default: bool = False) -> bool:
     normalized = str(value).strip().casefold()
     if normalized in {"true", "1", "yes", "on"}:
@@ -21,6 +45,9 @@ class ScenarioManifest:
     content_root: str
     build_version: str = "unversioned"
     format_version: str = "1"
+    control_defaults: Dict[str, str] = field(
+        default_factory=dict
+    )
 
     @classmethod
     def parse(cls, text: str) -> "ScenarioManifest":
@@ -31,6 +58,15 @@ class ScenarioManifest:
             raise ValueError("file-manifest.md is missing GAME_NAME")
         if not content_root:
             raise ValueError("file-manifest.md is missing CONTENT_ROOT")
+        control_defaults = {}
+        for key, value in fields.items():
+            if not key.startswith("control."):
+                continue
+            name = key[len("control."):].strip()
+            if not name or name in _RESERVED_CONTROL_NAMES:
+                continue
+            control_defaults[name] = str(value).strip()
+
         return cls(
             game_name=game_name,
             content_root=content_root,
@@ -42,6 +78,7 @@ class ScenarioManifest:
                 fields.get("FORMAT_VERSION", "").strip()
                 or "1"
             ),
+            control_defaults=control_defaults,
         )
 
 
@@ -113,13 +150,58 @@ class InitComplete:
         )
 
     def control_values(self) -> Dict[str, Any]:
-        return {
+        values = {
             "world_consistency": self.world_consistency,
             "initiative": self.initiative,
             "language": self.language,
             "dev_commands": self.dev_commands,
             "paused": self.paused,
         }
+        values.update(self.extra_fields)
+        return values
+
+    def apply_control_values(
+        self,
+        values: Mapping[str, Any],
+    ) -> None:
+        self.world_consistency = str(
+            values.get(
+                "world_consistency",
+                self.world_consistency,
+            )
+        )
+        self.initiative = str(
+            values.get(
+                "initiative",
+                self.initiative,
+            )
+        )
+        self.language = str(
+            values.get("language", self.language)
+        )
+        self.dev_commands = _parse_bool(
+            str(
+                values.get(
+                    "dev_commands",
+                    self.dev_commands,
+                )
+            ),
+            self.dev_commands,
+        )
+        self.paused = _parse_bool(
+            str(
+                values.get("paused", self.paused)
+            ),
+            self.paused,
+        )
+
+        extras = {}
+        for key, value in values.items():
+            name = str(key)
+            if name in _CORE_CONTROL_NAMES:
+                continue
+            extras[name] = str(value)
+        self.extra_fields = extras
 
     def render(self) -> str:
         lines = [

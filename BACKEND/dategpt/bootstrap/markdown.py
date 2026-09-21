@@ -1,6 +1,30 @@
 from __future__ import annotations
 
+import unicodedata
 from typing import Dict
+
+
+def _normalize_field_key(value: str) -> str:
+    key = unicodedata.normalize("NFC", str(value))
+    key = key.replace("\ufeff", "")
+    key = key.replace("\u200b", "")
+    key = key.replace("\u200c", "")
+    key = key.replace("\u200d", "")
+    key = key.replace("\u2060", "")
+    key = key.strip()
+
+    for token in (
+        "_", "-", ".", ":", "*", "`",
+        "[", "]", "(", ")", "#", "+",
+    ):
+        key = key.replace("\\" + token, token)
+
+    # Backslashes have no valid meaning in manifest/save field names.
+    # Removing any leftovers recovers keys damaged by Windows/editor
+    # copy-save round trips, e.g. game\\_id or game_\\id.
+    key = key.replace("\\", "")
+
+    return key
 
 
 def parse_markdown_fields(text: str) -> Dict[str, str]:
@@ -17,12 +41,28 @@ def parse_markdown_fields(text: str) -> Dict[str, str]:
     values: Dict[str, str] = {}
 
     for raw_line in text.splitlines():
-        line = raw_line.strip()
+        line = unicodedata.normalize(
+            "NFC",
+            str(raw_line),
+        )
+        for invisible in (
+            "\ufeff",
+            "\u200b",
+            "\u200c",
+            "\u200d",
+            "\u2060",
+        ):
+            line = line.replace(invisible, "")
+        line = line.strip()
         if not line or line.startswith("#"):
             continue
 
         payload = line
-        if payload.startswith("- "):
+        if (
+            len(payload) >= 2
+            and payload[0] in {"-", "*", "+"}
+            and payload[1].isspace()
+        ):
             payload = payload[2:].strip()
 
         if (
@@ -36,7 +76,26 @@ def parse_markdown_fields(text: str) -> Dict[str, str]:
             continue
 
         key, value = payload.split(":", 1)
-        key = key.strip()
+        key = _normalize_field_key(key)
+        if (
+            len(key) >= 4
+            and key.startswith("**")
+            and key.endswith("**")
+        ):
+            key = key[2:-2].strip()
+        elif (
+            len(key) >= 2
+            and key.startswith("*")
+            and key.endswith("*")
+        ):
+            key = key[1:-1].strip()
+        elif (
+            len(key) >= 2
+            and key.startswith("_")
+            and key.endswith("_")
+        ):
+            key = key[1:-1].strip()
+
         if key:
             values[key] = value.strip()
 

@@ -57,12 +57,13 @@ class HistoryStore:
         with self.path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
-    def tail(self, limit: int = 20) -> List[Dict[str, Any]]:
-        if not self.path.exists() or limit <= 0:
+    def records(self) -> List[Dict[str, Any]]:
+        if not self.path.exists():
             return []
-        lines = self.path.read_text(encoding="utf-8").splitlines()
         records = []
-        for line in lines[-limit:]:
+        for line in self.path.read_text(
+            encoding="utf-8"
+        ).splitlines():
             if not line.strip():
                 continue
             try:
@@ -72,3 +73,27 @@ class HistoryStore:
             if isinstance(value, dict):
                 records.append(value)
         return records
+
+    def count(self) -> int:
+        return len(self.records())
+
+    def tail(self, limit: int = 20) -> List[Dict[str, Any]]:
+        if limit <= 0:
+            return []
+        return self.records()[-limit:]
+
+    def truncate(self, count: int) -> None:
+        records = self.records()[:max(0, int(count))]
+        temp = self.path.with_name(
+            self.path.name + ".tmp"
+        )
+        with temp.open("w", encoding="utf-8") as stream:
+            for record in records:
+                stream.write(
+                    json.dumps(
+                        record,
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        temp.replace(self.path)

@@ -42,7 +42,7 @@ class ModelSettingsRouter:
             provider = str(message.get("provider", "")).strip()
             return self._clear_api_key(provider)
 
-        if message_type == "say":
+        if message_type == "play":
             return self.try_handle_text(
                 str(message.get("text", ""))
             )
