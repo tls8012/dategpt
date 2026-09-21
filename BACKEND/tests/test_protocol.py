@@ -94,12 +94,14 @@ class FakeRunner:
         *,
         prompt_fingerprint,
         phase,
+        segments=(),
     ):
         self.recorded_assistant.append(
             {
                 "text": text,
                 "prompt_fingerprint": prompt_fingerprint,
                 "phase": phase,
+                "segments": list(segments),
             }
         )
 
