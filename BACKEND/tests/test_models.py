@@ -105,6 +105,11 @@ class ModelSettingsTests(unittest.TestCase):
             self.assertEqual(model[0], "openai")
             self.assertEqual(model[1]["model"], "gpt-test")
             self.assertEqual(model[1]["api_key"], "openai-key")
+            self.assertTrue(model[1]["use_responses_api"])
+            self.assertEqual(
+                model[1]["output_version"],
+                "responses/v1",
+            )
 
             store.set_model("anthropic", "claude-test")
             store.set_api_key("anthropic", "anthropic-key")

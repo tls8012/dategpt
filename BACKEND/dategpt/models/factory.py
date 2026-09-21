@@ -50,6 +50,8 @@ class ModelFactory:
             return factory(
                 model=settings.model,
                 api_key=api_key,
+                use_responses_api=True,
+                output_version="responses/v1",
             )
 
         if settings.provider == "anthropic":
