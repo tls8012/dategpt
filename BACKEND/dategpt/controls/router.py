@@ -96,6 +96,14 @@ class ControlRouter:
         if stripped == "!도움말":
             return self._ok(self.render_help())
 
+        if (
+            stripped == "!설정"
+            or stripped.startswith("!설정 ")
+        ):
+            return self._handle_extra_control_command(
+                stripped
+            )
+
         command, separator, argument = stripped.partition(" ")
         target = self.aliases.get(command)
         if target is None:
@@ -126,9 +134,58 @@ class ControlRouter:
             "- !언어 <언어>\n"
             "- !initiative <low|medium|high>\n"
             "- !world_consistency <low|medium|high>\n"
+            "- !설정 [시나리오설정] [값]\n"
             "- !중단 / !재개\n"
             "- !도움말\n"
             "이 명령들은 LLM을 호출하지 않습니다."
+        )
+
+    def _handle_extra_control_command(
+        self,
+        stripped: str,
+    ) -> ControlResponse:
+        payload = stripped[len("!설정"):].strip()
+        if not payload:
+            if not self.state.extra:
+                return self._ok(
+                    "등록된 시나리오 설정이 없습니다."
+                )
+            rendered = ", ".join(
+                "{}={}".format(name, value)
+                for name, value in sorted(
+                    self.state.extra.items()
+                )
+            )
+            return self._ok(
+                "시나리오 설정: {}".format(rendered)
+            )
+
+        name, separator, value = payload.partition(" ")
+        name = name.strip()
+        if name not in self.state.extra:
+            return ControlResponse(
+                True,
+                "등록되지 않은 시나리오 설정입니다: {}".format(
+                    name
+                ),
+                self.state.snapshot(),
+            )
+
+        value = value.strip()
+        if not separator or not value:
+            return self._ok(
+                "{}: {}".format(
+                    name,
+                    self.state.extra[name],
+                )
+            )
+
+        self._set(name, value)
+        return self._ok(
+            "{}: {}".format(
+                name,
+                self.state.extra[name],
+            )
         )
 
     def _set(self, name: str, value: Any) -> None:
