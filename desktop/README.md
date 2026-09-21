@@ -53,7 +53,7 @@ backend virtual environment.
 - toggleable backend debug dock
 - QProcess signal-based backend transport
 - sparse turn journal with rollback/edit/regenerate
-- structured narration/dialogue/system presentation
+- structured narration/dialogue/system presentation with per-segment asset IDs
 - Space-based sentence paging
 - resume-time restoration of the latest conversation presentation
 - Help and Continue actions without typing commands
@@ -68,8 +68,10 @@ Keyboard interaction in the game page:
 - Ctrl+Enter: send free-text input
 - Escape: close the input panel
 
+Presentation is intentionally non-streaming: one LLM call completes and validates
+the structured response before its segments are shown.
+
 Not implemented yet:
 
-- true provider token-latency streaming while structured output is still being generated
 - cartridge asset/background rendering
 - rich existing-character picker
