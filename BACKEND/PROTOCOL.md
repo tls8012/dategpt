@@ -1,7 +1,7 @@
 # DateGPT Backend Protocol
 
-The Ren'Py frontend and Python backend communicate using newline-delimited JSON
-(JSONL) over stdin/stdout.
+The PySide6 desktop frontend and Python backend communicate using
+newline-delimited JSON (JSONL) over stdin/stdout through Qt QProcess.
 
 DateGPT v1 intentionally supports exactly one active game session per backend
 process. Opening another session replaces the current active session. There is
@@ -43,7 +43,7 @@ Protocol operations:
 Supported modes are original, existing, and observer. Existing mode requires an
 exact public Distribution entity path.
 
-Until a dedicated UI is added, normal say/play input also accepts:
+Normal `play` input also accepts the onboarding compatibility commands:
 
 ```text
 !온보딩
@@ -112,8 +112,9 @@ same retrieval boundary.
 
 ## Gameplay
 
-play (and the compatibility alias say) runs one normal AgentRunner turn.
-Current controls may be repeated on every request.
+`play` is the single gameplay text message. Before a gameplay turn reaches
+the LLM, deterministic model/control commands are given a chance to handle the
+text. Current controls may also be repeated on every request.
 
 Gameplay and onboarding LLM replies use a structured VN response schema. The
 validated response contains ordered `segments`; each segment is narration,
