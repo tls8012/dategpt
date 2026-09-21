@@ -18,7 +18,16 @@ class FakeAgent:
         return {
             "messages": [
                 {"role": "assistant", "content": "최종 응답"},
-            ]
+            ],
+            "structured_response": {
+                "segments": [
+                    {
+                        "kind": "narration",
+                        "speaker": "",
+                        "text": "최종 응답",
+                    }
+                ]
+            },
         }
 
 
@@ -132,7 +141,16 @@ class AgentTests(unittest.TestCase):
                                 "role": "assistant",
                                 "content": "done",
                             }
-                        ]
+                        ],
+                        "structured_response": {
+                            "segments": [
+                                {
+                                    "kind": "narration",
+                                    "speaker": "",
+                                    "text": "done",
+                                }
+                            ]
+                        },
                     }
 
             def tool_factory(fs):
