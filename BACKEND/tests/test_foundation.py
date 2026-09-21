@@ -104,6 +104,32 @@ class FoundationTests(unittest.TestCase):
         unknown = router.try_handle_text("안녕")
         self.assertFalse(unknown.handled)
 
+        state.set("gender", "unspecified")
+        queried = router.try_handle_text("!설정 gender")
+        self.assertTrue(queried.handled)
+        self.assertEqual(
+            queried.controls["gender"],
+            "unspecified",
+        )
+
+        changed = router.try_handle_text(
+            "!설정 gender female"
+        )
+        self.assertTrue(changed.handled)
+        self.assertEqual(
+            state.extra["gender"],
+            "female",
+        )
+
+        missing = router.try_handle_text(
+            "!설정 typo value"
+        )
+        self.assertTrue(missing.handled)
+        self.assertIn(
+            "등록되지 않은",
+            missing.message,
+        )
+
     def test_host_builds_runtime_only_turn_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
