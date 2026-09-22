@@ -40,7 +40,8 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          printf '{"type":"ping","request_id":"pkg-ping"}\n{"type":"shutdown","request_id":"pkg-stop"}\n' | ./dist/DateGPT.app/Contents/MacOS/DateGPT --backend-worker > packaged-worker.out 2> packaged-worker.err
+          test -f ./dist/DateGPT.app/Contents/Resources/desktop/style.qss
+          printf '{"type":"ping","request_id":"pkg-ping"}\n{"type":"shutdown","request_id":"pkg-stop"}\n' | ./dist/DateGPT.app/Contents/MacOS/DateGPTWorker > packaged-worker.out 2> packaged-worker.err
           cat packaged-worker.err
           cat packaged-worker.out
           grep -q 'pong' packaged-worker.out
@@ -54,7 +55,10 @@ jobs:
             '{"type":"ping","request_id":"pkg-ping"}',
             '{"type":"shutdown","request_id":"pkg-stop"}'
           )
-          $inputLines | & .\dist\DateGPT\DateGPT.exe --backend-worker 1> packaged-worker.out 2> packaged-worker.err
+          if (-not (Test-Path .\dist\DateGPT\_internal\desktop\style.qss)) {
+            throw "packaged desktop style.qss missing"
+          }
+          $inputLines | & .\dist\DateGPT\DateGPTWorker.exe 1> packaged-worker.out 2> packaged-worker.err
           Get-Content packaged-worker.err
           Get-Content packaged-worker.out
           if (-not (Select-String -Path packaged-worker.out -Pattern 'pong' -Quiet)) { throw "packaged backend ping failed" }
