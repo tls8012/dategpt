@@ -37,9 +37,10 @@ python -m pip install -r requirements.txt
 python desktop\main.py
 ```
 
-The frontend launches `BACKEND/backend.py` with the exact same
-`sys.executable` that is running the PySide application. There is no second
-backend virtual environment.
+In source mode the frontend launches the same desktop entrypoint again as
+`--backend-worker` under the current interpreter. In packaged mode it launches
+the packaged DateGPT executable itself as `--backend-worker`. The JSONL
+transport is identical in both cases.
 
 ## Implemented
 
