@@ -62,7 +62,9 @@ cases.
 - Help and Continue actions without typing commands
 - on-demand Enter input panel
 - language / initiative / world consistency settings
-- dynamic scenario-specific string controls from the active cartridge
+- dynamic scenario-specific controls from the active cartridge
+- dropdowns for scenario controls with predeclared finite options
+- deterministic SCG hot-swap when an enum control matches asset metadata
 - dialogue overlay inside the stage/background area
 
 Keyboard interaction in the game page:
