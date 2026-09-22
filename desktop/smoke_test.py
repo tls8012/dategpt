@@ -68,6 +68,41 @@ def main() -> int:
         )
         return 1
 
+    window.game.set_segments([
+        {
+            "kind": "narration",
+            "speaker": "",
+            "text": "text-only scene",
+            "assets": [],
+            "resolved_assets": [],
+        },
+    ])
+    if window.game.dialogue_text.text() != "text-only scene":
+        print(
+            "text-only scene did not render",
+            file=sys.stderr,
+        )
+        return 1
+    if any(
+        label.pixmap() is not None
+        and not label.pixmap().isNull()
+        for label in window.game.character_labels
+    ):
+        print(
+            "SCG unexpectedly exists in zero-asset scene",
+            file=sys.stderr,
+        )
+        return 1
+    if any(
+        asset is not None
+        for asset in window.game._character_label_assets
+    ):
+        print(
+            "character visual state unexpectedly exists",
+            file=sys.stderr,
+        )
+        return 1
+
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
         background = base / "background.png"
