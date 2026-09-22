@@ -728,7 +728,8 @@ class GamePage(QWidget):
             label.show()
 
         any_visible = any(
-            label.isVisible()
+            label.pixmap() is not None
+            and not label.pixmap().isNull()
             for label in self.character_labels
         )
         self.stage_hint.setVisible(
@@ -738,7 +739,8 @@ class GamePage(QWidget):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         if (
-            0 <= self._segment_index
+            hasattr(self, "character_labels")
+            and 0 <= self._segment_index
             < len(self._segments)
         ):
             self._render_assets(
