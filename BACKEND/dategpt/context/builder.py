@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from ..bootstrap.markdown import parse_markdown_fields
 from ..bootstrap.models import InitComplete
 from ..scenarios import CharacterManifestIndex, ScenarioPack
 from ..workspace import SessionWorkspace
@@ -57,6 +58,16 @@ class ContextBuilder:
     def build_gameplay(self) -> ContextMaterial:
         core_files = self._core_files()
         stable_context = self._stable_core_context(core_files)
+        asset_context = self._asset_context_block()
+        if asset_context:
+            stable_context = "\n\n".join(
+                part
+                for part in (
+                    stable_context,
+                    asset_context,
+                )
+                if part
+            )
 
         blocks: List[str] = []
 
@@ -239,6 +250,86 @@ class ContextBuilder:
             paths.append(record.path)
 
         return tuple(paths)
+
+    def _asset_context_block(self) -> str:
+        entrypoint = ""
+
+        if self.scenario.exists("file-manifest.md"):
+            fields = parse_markdown_fields(
+                self.scenario.read_text(
+                    "file-manifest.md"
+                )
+            )
+            entrypoint = str(
+                fields.get("asset_manifest", "")
+            ).strip()
+
+        if not entrypoint and self.scenario.exists(
+            "assets/index.md"
+        ):
+            entrypoint = "assets/index.md"
+
+        if (
+            not entrypoint
+            or not self.scenario.exists(entrypoint)
+        ):
+            return ""
+
+        paths = [entrypoint]
+        seen = {entrypoint}
+        index_text = self.scenario.read_text(
+            entrypoint
+        )
+        base = entrypoint.rsplit("/", 1)[0]
+        if base == entrypoint:
+            base = ""
+
+        for raw_line in index_text.splitlines():
+            line = raw_line.strip()
+            if not line.casefold().startswith(
+                "manifest:"
+            ):
+                continue
+
+            child = line.split(":", 1)[1].strip()
+            if not child:
+                continue
+            child_path = (
+                "{}/{}".format(base, child)
+                if base
+                else child
+            )
+            child_path = child_path.replace(
+                "\\\\",
+                "/",
+            )
+            if (
+                child_path in seen
+                or not self.scenario.exists(
+                    child_path
+                )
+            ):
+                continue
+            seen.add(child_path)
+            paths.append(child_path)
+
+        chunks = [
+            "# REGISTERED VISUAL ASSETS",
+            (
+                "These are the registered image IDs available to the "
+                "structured response. Use the IDs, not file paths. "
+                "When the current scene has a matching registered "
+                "background or visible character SCG, select it."
+            ),
+        ]
+        for path in paths:
+            chunks.append(
+                "## SOURCE: {}\\n{}".format(
+                    path,
+                    self.scenario.read_text(path),
+                )
+            )
+        return "\\n\\n".join(chunks)
 
     def _core_files(self) -> List[str]:
         if not self.scenario.exists(self.context_manifest_name):
