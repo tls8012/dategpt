@@ -86,7 +86,11 @@ def _asset_kind(
     explicit = metadata.get("kind", "").strip()
     if explicit:
         return explicit.casefold()
-    if "character" in metadata:
+    if (
+        "character" in metadata
+        or manifest.stem.casefold()
+        in {"character", "characters"}
+    ):
         return "character"
     if manifest.stem.casefold() in {
         "background",
