@@ -811,6 +811,32 @@ class GamePage(QWidget):
         elif changed_characters:
             self._character_assets = changed_characters
 
+    def current_character_asset_ids(self):
+        return [
+            self._asset_id(asset)
+            for asset in self._character_assets
+            if self._asset_id(asset)
+        ]
+
+    def apply_resolved_character_assets(
+        self,
+        assets,
+    ) -> None:
+        character_assets = [
+            dict(asset)
+            for asset in list(assets or [])
+            if isinstance(asset, dict)
+            and str(
+                asset.get("kind", "")
+            ).casefold() == "character"
+        ]
+        if not character_assets:
+            return
+        self._render_assets(
+            character_assets,
+            animate=True,
+        )
+
     def advance_presentation(self) -> None:
         if self.input_frame.isVisible():
             return
@@ -2844,6 +2870,16 @@ class MainWindow(QMainWindow):
         if event_type == "control_state":
             controls = event.get("controls", {})
             if isinstance(controls, dict):
+                previous_controls = (
+                    dict(
+                        self.active_session.get(
+                            "controls",
+                            {},
+                        )
+                    )
+                    if self.active_session
+                    else {}
+                )
                 self.settings_dialog.apply_controls(
                     controls
                 )
@@ -2851,6 +2887,44 @@ class MainWindow(QMainWindow):
                     self.active_session["controls"] = (
                         dict(controls)
                     )
+
+                previous_head_mode = str(
+                    previous_controls.get(
+                        "head_mode",
+                        "",
+                    )
+                ).strip()
+                current_head_mode = str(
+                    controls.get(
+                        "head_mode",
+                        "",
+                    )
+                ).strip()
+                if (
+                    self.active_session
+                    and previous_head_mode
+                    != current_head_mode
+                ):
+                    asset_ids = (
+                        self.game.current_character_asset_ids()
+                    )
+                    if asset_ids:
+                        self._send(
+                            {
+                                "type": (
+                                    "resolve_visual_assets"
+                                ),
+                                "asset_ids": asset_ids,
+                            },
+                            "visual_assets_resolve",
+                        )
+            return
+
+        if event_type == "visual_assets_resolved":
+            self.game.apply_resolved_character_assets(
+                event.get("assets", [])
+            )
+            self._finish_request(request_id)
             return
 
         if event_type == "presentation_start":
