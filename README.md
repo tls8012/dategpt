@@ -46,8 +46,10 @@ python desktop/main.py
 In source/development mode the desktop process starts a second copy of
 `desktop/main.py --backend-worker` under the same repository virtual
 environment and communicates with it asynchronously through Qt `QProcess`.
-Packaged builds start the same DateGPT executable in `--backend-worker` mode,
-so end users do not need Python or a virtual environment.
+Packaged builds contain a windowed `DateGPT` executable plus a dedicated
+`DateGPTWorker` executable for JSONL stdio. They share the same bundled Python
+runtime and dependencies, so end users do not need Python or a virtual
+environment.
 
 ## Repository layout
 
