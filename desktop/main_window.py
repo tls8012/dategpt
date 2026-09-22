@@ -276,6 +276,9 @@ class GamePage(QWidget):
         )
 
         self.background_label = QLabel("")
+        self.background_label.setObjectName(
+            "BackgroundLayer"
+        )
         self.background_label.setAlignment(
             Qt.AlignmentFlag.AlignCenter
         )
@@ -286,6 +289,9 @@ class GamePage(QWidget):
         )
 
         self.character_layer = QFrame()
+        self.character_layer.setObjectName(
+            "CharacterLayer"
+        )
         character_layout = QHBoxLayout(
             self.character_layer
         )
@@ -307,6 +313,9 @@ class GamePage(QWidget):
         self.character_labels = []
         for _ in range(3):
             label = QLabel("")
+            label.setObjectName(
+                "CharacterSprite"
+            )
             label.setAlignment(
                 Qt.AlignmentFlag.AlignHCenter
                 | Qt.AlignmentFlag.AlignBottom
