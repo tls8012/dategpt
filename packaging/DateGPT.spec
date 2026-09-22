@@ -63,7 +63,10 @@ worker_a = Analysis(
         ),
         *provider_datas,
     ],
-    hiddenimports=provider_hiddenimports,
+    hiddenimports=[
+        *provider_hiddenimports,
+        "pydantic_core._pydantic_core",
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -72,17 +75,11 @@ worker_a = Analysis(
     optimize=0,
 )
 
-MERGE(
-    (gui_a, "main", "DateGPT"),
-    (worker_a, "backend", "DateGPTWorker"),
-)
-
 gui_pyz = PYZ(gui_a.pure)
 worker_pyz = PYZ(worker_a.pure)
 
 gui_exe = EXE(
     gui_pyz,
-    gui_a.dependencies,
     gui_a.scripts,
     [],
     exclude_binaries=True,
@@ -96,7 +93,6 @@ gui_exe = EXE(
 
 worker_exe = EXE(
     worker_pyz,
-    worker_a.dependencies,
     worker_a.scripts,
     [],
     exclude_binaries=True,
