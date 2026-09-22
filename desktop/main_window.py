@@ -12,7 +12,13 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
-from PySide6.QtGui import QAction, QKeySequence, QPixmap, QShortcut
+from PySide6.QtGui import (
+    QAction,
+    QImage,
+    QKeySequence,
+    QPixmap,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -1115,6 +1121,71 @@ class GamePage(QWidget):
             for center in centers[:count]
         ]
 
+    @staticmethod
+    def _upper_body_pixmap(
+        pixmap: QPixmap,
+        *,
+        visible_ratio: float = 0.68,
+    ) -> QPixmap:
+        if pixmap.isNull():
+            return pixmap
+
+        image = pixmap.toImage().convertToFormat(
+            QImage.Format.Format_RGBA8888
+        )
+        width = image.width()
+        height = image.height()
+        if width <= 0 or height <= 0:
+            return pixmap
+
+        top = 0
+        bottom = height - 1
+
+        if image.hasAlphaChannel():
+            data = image.bits().tobytes()
+            stride = image.bytesPerLine()
+
+            def row_has_alpha(y: int) -> bool:
+                start = y * stride
+                row = data[
+                    start : start + width * 4
+                ]
+                return any(row[3::4])
+
+            for y in range(height):
+                if row_has_alpha(y):
+                    top = y
+                    break
+
+            for y in range(height - 1, top - 1, -1):
+                if row_has_alpha(y):
+                    bottom = y
+                    break
+
+        visible_height = max(
+            1,
+            bottom - top + 1,
+        )
+        crop_height = max(
+            1,
+            min(
+                visible_height,
+                int(
+                    round(
+                        visible_height
+                        * float(visible_ratio)
+                    )
+                ),
+            ),
+        )
+
+        return pixmap.copy(
+            0,
+            top,
+            width,
+            crop_height,
+        )
+
     def _set_character_pixmap(
         self,
         label_index: int,
@@ -1131,6 +1202,9 @@ class GamePage(QWidget):
             label.clear()
             return False
 
+        pixmap = self._upper_body_pixmap(
+            pixmap
+        )
         rect = label.geometry()
         scaled = pixmap.scaled(
             max(1, rect.width()),
