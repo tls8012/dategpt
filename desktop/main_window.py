@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from backend_client import BackendClient
+from platform_focus import activate_application
 
 
 class LauncherPage(QWidget):
@@ -1553,8 +1554,7 @@ class MainWindow(QMainWindow):
         )
 
     def install_cartridge(self) -> None:
-        self.raise_()
-        self.activateWindow()
+        activate_application(self)
         QApplication.setActiveWindow(self)
 
         source, ok = QInputDialog.getText(
@@ -1637,6 +1637,7 @@ class MainWindow(QMainWindow):
         return payload
 
     def open_settings(self) -> None:
+        activate_application(self)
         self.settings_dialog.show()
         self.settings_dialog.raise_()
         self.settings_dialog.activateWindow()
@@ -1772,6 +1773,8 @@ class MainWindow(QMainWindow):
             "mode": mode,
         }
         if mode == "existing":
+            activate_application(self)
+            QApplication.setActiveWindow(self)
             path, ok = QInputDialog.getText(
                 self,
                 "기존 캐릭터",
@@ -1814,6 +1817,7 @@ class MainWindow(QMainWindow):
     def open_turn_history(self) -> None:
         if not self.active_session:
             return
+        activate_application(self)
         self.turn_history_dialog.show()
         self.turn_history_dialog.raise_()
         self.turn_history_dialog.activateWindow()
