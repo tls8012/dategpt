@@ -16,7 +16,7 @@ def main() -> int:
 
     app = QApplication([])
     client = BackendClient(
-        repo_root / "BACKEND" / "backend.py"
+        entrypoint_path=desktop_dir / "main.py"
     )
     window = MainWindow(client)
 
