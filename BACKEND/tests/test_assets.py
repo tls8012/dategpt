@@ -145,6 +145,31 @@ class AssetCatalogTests(unittest.TestCase):
                 ["B001", "A001", "A002", "A003"],
             )
 
+    def test_first_resolved_background_returns_registered_asset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            distribution = Path(tmp) / "distribution"
+            assets = distribution / "assets"
+            assets.mkdir(parents=True)
+            (assets / "backgrounds.md").write_text(
+                "format: `ID | kind | location | variant | path`\n"
+                "B001 | background | room | day | bg.png\n",
+                encoding="utf-8",
+            )
+            (distribution / "bg.png").write_bytes(
+                b"fake-png"
+            )
+
+            catalog = AssetCatalog(distribution)
+            fallback = catalog.first_resolved(
+                kind="background"
+            )
+            self.assertIsNotNone(fallback)
+            self.assertEqual(fallback["id"], "B001")
+            self.assertEqual(
+                fallback["kind"],
+                "background",
+            )
+
     def test_unknown_or_unsafe_asset_ids_do_not_resolve(self):
         with tempfile.TemporaryDirectory() as tmp:
             distribution = Path(tmp) / "distribution"
