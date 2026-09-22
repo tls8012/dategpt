@@ -129,5 +129,7 @@ if sys.platform == "darwin":
         version="0.1.0",
         info_plist={
             "NSHighResolutionCapable": True,
+            "LSUIElement": False,
+            "LSBackgroundOnly": False,
         },
     )
