@@ -268,6 +268,20 @@ class AssetCatalog:
             local_path=local_path,
         )
 
+    def first_resolved(
+        self,
+        *,
+        kind: str,
+    ) -> Optional[dict]:
+        wanted = str(kind).strip().casefold()
+        for record in self.records.values():
+            if record.kind.casefold() != wanted:
+                continue
+            resolved = self.resolve(record.asset_id)
+            if resolved is not None:
+                return resolved
+        return None
+
     def resolve_ids(
         self,
         asset_ids: Iterable[str],
