@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import Dict, Iterable, Iterator, List, Optional
 
 
 _IMAGE_SUFFIXES = {
@@ -18,6 +18,10 @@ _IMAGE_SUFFIXES = {
 class AssetRecord:
     asset_id: str
     path: str
+    kind: str = "image"
+    metadata: Dict[str, str] = field(
+        default_factory=dict
+    )
 
     def public_dict(
         self,
@@ -26,7 +30,9 @@ class AssetRecord:
     ) -> dict:
         data = {
             "id": self.asset_id,
+            "kind": self.kind,
             "path": self.path,
+            "metadata": dict(self.metadata),
         }
         if local_path is not None:
             data["local_path"] = str(local_path)
@@ -52,6 +58,44 @@ def normalize_asset_path(value: str) -> Optional[str]:
     return normalized
 
 
+
+def _format_columns(line: str) -> Optional[List[str]]:
+    stripped = line.strip()
+    if not stripped.casefold().startswith("format:"):
+        return None
+
+    value = stripped.split(":", 1)[1].strip()
+    value = value.strip("\`").strip()
+    columns = [
+        item.strip()
+        for item in value.split("|")
+    ]
+    if (
+        len(columns) < 2
+        or columns[0].casefold() != "id"
+        or columns[-1].casefold() != "path"
+    ):
+        return None
+    return columns
+
+
+def _asset_kind(
+    manifest: Path,
+    metadata: Dict[str, str],
+) -> str:
+    explicit = metadata.get("kind", "").strip()
+    if explicit:
+        return explicit.casefold()
+    if "character" in metadata:
+        return "character"
+    if manifest.stem.casefold() in {
+        "background",
+        "backgrounds",
+    }:
+        return "background"
+    return "image"
+
+
 def iter_asset_records(
     distribution_root: Path,
 ) -> Iterator[AssetRecord]:
@@ -67,8 +111,14 @@ def iter_asset_records(
         except (OSError, UnicodeDecodeError):
             continue
 
+        columns_spec: Optional[List[str]] = None
         for raw_line in text.splitlines():
             line = raw_line.strip()
+            parsed_format = _format_columns(line)
+            if parsed_format is not None:
+                columns_spec = parsed_format
+                continue
+
             if (
                 not line
                 or line.startswith("#")
@@ -90,18 +140,33 @@ def iter_asset_records(
             if not asset_id or asset_path is None:
                 continue
 
-            previous = seen.get(asset_id)
-            if previous is not None:
-                if previous != asset_path:
-                    continue
+            if asset_id in seen:
                 continue
+
+            metadata: Dict[str, str] = {}
+            if (
+                columns_spec is not None
+                and len(columns_spec) == len(columns)
+            ):
+                metadata = {
+                    key.strip().casefold(): value
+                    for key, value in zip(
+                        columns_spec[1:-1],
+                        columns[1:-1],
+                    )
+                    if key.strip()
+                }
 
             seen[asset_id] = asset_path
             yield AssetRecord(
                 asset_id=asset_id,
                 path=asset_path,
+                kind=_asset_kind(
+                    manifest,
+                    metadata,
+                ),
+                metadata=metadata,
             )
-
 
 def infer_content_base(
     distribution_root: Path,
@@ -203,10 +268,13 @@ class AssetCatalog:
         self,
         asset_ids: Iterable[str],
         *,
-        limit: int = 3,
+        character_limit: int = 3,
     ) -> List[dict]:
         resolved = []
         seen = set()
+        backgrounds = 0
+        characters = 0
+
         for value in asset_ids:
             asset_id = str(value).strip()
             if not asset_id or asset_id in seen:
@@ -216,9 +284,24 @@ class AssetCatalog:
             record = self.resolve(asset_id)
             if record is None:
                 continue
+
+            kind = str(
+                record.get("kind", "")
+            ).casefold()
+            if kind == "background":
+                if backgrounds >= 1:
+                    continue
+                backgrounds += 1
+            elif kind == "character":
+                if characters >= max(
+                    1,
+                    int(character_limit),
+                ):
+                    continue
+                characters += 1
+
             resolved.append(record)
-            if len(resolved) >= max(1, int(limit)):
-                break
+
         return resolved
 
     def __len__(self) -> int:
