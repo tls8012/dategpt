@@ -168,7 +168,9 @@ def write_scenario(root: Path):
         "- `GAME_NAME: protocol-test`\n"
         "- `CONTENT_ROOT: .`\n"
         "- `control.gender: unspecified`\n"
-        "- `control.head_mode: human`\n",
+        "- `control.gender.options: unspecified | female | male`\n"
+        "- `control.head_mode: human`\n"
+        "- `control.head_mode.options: human | logo`\n",
         encoding="utf-8",
     )
     (root / "story").mkdir()
@@ -304,6 +306,10 @@ class ProtocolTests(unittest.TestCase):
             self.assertEqual(
                 opened[0]["type"],
                 "session_opened",
+            )
+            self.assertIn(
+                "control_options",
+                opened[0],
             )
             self.assertEqual(
                 opened[0]["game_name"],
@@ -877,7 +883,7 @@ class ProtocolTests(unittest.TestCase):
                 ).is_file()
             )
 
-    def test_presentation_uses_current_head_mode_variant(self):
+    def test_presentation_uses_current_enum_visual_variant(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             app, _, _, _ = self.make_open_app(base)
@@ -923,7 +929,7 @@ class ProtocolTests(unittest.TestCase):
                 "A001",
             )
 
-    def test_head_mode_control_can_reresolve_visible_scg_without_llm(self):
+    def test_enum_control_can_reresolve_visible_scg_without_llm(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             app, _, _, _ = self.make_open_app(base)
@@ -951,6 +957,22 @@ class ProtocolTests(unittest.TestCase):
             self.assertEqual(
                 changed[0]["controls"]["head_mode"],
                 "logo",
+            )
+            self.assertEqual(
+                changed[0]["control_options"][
+                    "head_mode"
+                ],
+                ["human", "logo"],
+            )
+            self.assertEqual(
+                changed[0]["control_options"][
+                    "gender"
+                ],
+                [
+                    "unspecified",
+                    "female",
+                    "male",
+                ],
             )
             self.assertEqual(
                 app.active_session.runner.turns,
