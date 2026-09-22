@@ -6,7 +6,7 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
 
-project_root = Path(SPECPATH).parent.parent
+project_root = Path(SPECPATH).parent
 desktop_dir = project_root / "desktop"
 backend_dir = project_root / "BACKEND"
 
