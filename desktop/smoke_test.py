@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication, QStackedLayout
 
 from backend_client import BackendClient
 from main_window import MainWindow
@@ -21,6 +23,91 @@ def main() -> int:
         )
     )
     window = MainWindow(client)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        background = base / "background.png"
+        character = base / "character.png"
+
+        QImage(64, 36, QImage.Format.Format_RGB32).save(
+            str(background)
+        )
+        QImage(
+            24,
+            48,
+            QImage.Format.Format_ARGB32,
+        ).save(str(character))
+
+        window.game.set_segments([
+            {
+                "kind": "narration",
+                "speaker": "",
+                "text": "visual smoke",
+                "assets": ["B001", "A001"],
+                "resolved_assets": [
+                    {
+                        "id": "B001",
+                        "kind": "background",
+                        "local_path": str(background),
+                    },
+                    {
+                        "id": "A001",
+                        "kind": "character",
+                        "local_path": str(character),
+                    },
+                ],
+            },
+        ])
+
+        background_pixmap = (
+            window.game.background_label.pixmap()
+        )
+        character_pixmap = (
+            window.game.character_labels[0].pixmap()
+        )
+        if (
+            background_pixmap is None
+            or background_pixmap.isNull()
+            or character_pixmap is None
+            or character_pixmap.isNull()
+        ):
+            print(
+                "visual layer smoke test failed",
+                file=sys.stderr,
+            )
+            return 1
+
+        visual_stack = window.game.visual_area.layout()
+        if (
+            not isinstance(
+                visual_stack,
+                QStackedLayout,
+            )
+            or visual_stack.currentWidget()
+            is not window.game.character_layer
+        ):
+            print(
+                "character layer is not above background",
+                file=sys.stderr,
+            )
+            return 1
+
+        window.game.set_segments([
+            {
+                "kind": "narration",
+                "speaker": "",
+                "text": "background persists",
+                "assets": [],
+                "resolved_assets": [],
+            },
+        ])
+        persisted = window.game.background_label.pixmap()
+        if persisted is None or persisted.isNull():
+            print(
+                "background did not persist",
+                file=sys.stderr,
+            )
+            return 1
 
     state = {
         "pong": False,
