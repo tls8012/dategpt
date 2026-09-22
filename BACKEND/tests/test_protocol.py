@@ -167,7 +167,8 @@ def write_scenario(root: Path):
         "# FILE MANIFEST\n\n"
         "- `GAME_NAME: protocol-test`\n"
         "- `CONTENT_ROOT: .`\n"
-        "- `control.gender: unspecified`\n",
+        "- `control.gender: unspecified`\n"
+        "- `control.head_mode: human`\n",
         encoding="utf-8",
     )
     (root / "story").mkdir()
@@ -182,7 +183,9 @@ def write_scenario(root: Path):
     )
     (root / "assets").mkdir()
     (root / "assets" / "characters.md").write_text(
-        "A001 | Test | assets/test.png\n",
+        "format: `ID | character | gender | head_mode | outfit | pose | path`\n"
+        "A001 | Test | unspecified | human | uniform | neutral | assets/test.png\n"
+        "A002 | Test | unspecified | logo | uniform | neutral | assets/test_logo.png\n",
         encoding="utf-8",
     )
     (root / "assets" / "backgrounds.md").write_text(
@@ -191,6 +194,9 @@ def write_scenario(root: Path):
     )
     (root / "assets" / "test.png").write_bytes(
         b"fake-png"
+    )
+    (root / "assets" / "test_logo.png").write_bytes(
+        b"fake-png-logo"
     )
     (root / "assets" / "bg.png").write_bytes(
         b"fake-png"
@@ -869,6 +875,63 @@ class ProtocolTests(unittest.TestCase):
                         "local_path"
                     ]
                 ).is_file()
+            )
+
+    def test_head_mode_control_can_reresolve_visible_scg_without_llm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+
+            before_turns = list(
+                app.active_session.runner.turns
+            )
+            changed = app.handle({
+                "type": "set_controls",
+                "controls": {
+                    "head_mode": "logo",
+                },
+            })
+            self.assertEqual(
+                changed[0]["type"],
+                "control_state",
+            )
+            self.assertEqual(
+                changed[0]["controls"]["head_mode"],
+                "logo",
+            )
+            self.assertEqual(
+                app.active_session.runner.turns,
+                before_turns,
+            )
+
+            resolved = app.handle({
+                "type": "resolve_visual_assets",
+                "asset_ids": ["A001"],
+            })
+            self.assertEqual(
+                resolved[0]["type"],
+                "visual_assets_resolved",
+            )
+            self.assertEqual(
+                resolved[0]["assets"][0]["id"],
+                "A002",
+            )
+            self.assertEqual(
+                resolved[0]["assets"][0][
+                    "metadata"
+                ]["gender"],
+                "unspecified",
+            )
+            self.assertEqual(
+                app.active_session.runner.turns,
+                before_turns,
             )
 
     def test_resume_exposes_recent_structured_history(self):
