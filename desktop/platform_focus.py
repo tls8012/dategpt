@@ -60,6 +60,14 @@ def _activate_macos_foreground() -> None:
         )(
             ("objc_msgSend", objc)
         )
+        send_policy = ctypes.CFUNCTYPE(
+            ctypes.c_bool,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_long,
+        )(
+            ("objc_msgSend", objc)
+        )
 
         app_class = objc.objc_getClass(
             b"NSApplication"
@@ -69,6 +77,13 @@ def _activate_macos_foreground() -> None:
             objc.sel_registerName(
                 b"sharedApplication"
             ),
+        )
+        send_policy(
+            app,
+            objc.sel_registerName(
+                b"setActivationPolicy:"
+            ),
+            0,
         )
         send_bool(
             app,
