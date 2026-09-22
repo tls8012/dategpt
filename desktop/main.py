@@ -59,28 +59,48 @@ def _reexec_in_repo_venv() -> None:
 _reexec_in_repo_venv()
 
 
-def _run_backend_worker_if_requested() -> None:
-    if "--backend-worker" not in sys.argv[1:]:
-        return
 
-    if not getattr(sys, "frozen", False):
-        repo_root = Path(__file__).resolve().parent.parent
-        backend_dir = repo_root / "BACKEND"
-        backend_text = str(backend_dir)
-        if backend_text not in sys.path:
-            sys.path.insert(0, backend_text)
-
-    from dategpt.stdio_worker import main as worker_main
-
-    raise SystemExit(worker_main())
-
-
-_run_backend_worker_if_requested()
-
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from backend_client import BackendClient
 from main_window import MainWindow
+
+
+def _resource_path(*parts: str) -> Path:
+    candidates = []
+    bundle_root = getattr(sys, "_MEIPASS", "")
+    if bundle_root:
+        candidates.append(
+            Path(bundle_root).resolve()
+        )
+
+    if (
+        getattr(sys, "frozen", False)
+        and sys.platform == "darwin"
+    ):
+        executable = Path(sys.executable).resolve()
+        candidates.append(
+            executable.parent.parent / "Resources"
+        )
+
+    candidates.append(
+        Path(__file__).resolve().parent.parent
+    )
+
+    for root in candidates:
+        candidate = root.joinpath(*parts)
+        if candidate.exists():
+            return candidate
+    return candidates[0].joinpath(*parts)
+
+
+def _activate_window(window: MainWindow) -> None:
+    window.raise_()
+    window.activateWindow()
+    handle = window.windowHandle()
+    if handle is not None:
+        handle.requestActivate()
 
 
 def parse_args() -> argparse.Namespace:
@@ -92,24 +112,34 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    desktop_dir = Path(__file__).resolve().parent
-    repo_root = desktop_dir.parent
     app = QApplication(sys.argv)
     app.setApplicationName("DateGPT")
 
-    style_path = desktop_dir / "style.qss"
+    style_path = _resource_path(
+        "desktop",
+        "style.qss",
+    )
     if style_path.exists():
         app.setStyleSheet(
             style_path.read_text(encoding="utf-8")
         )
 
     client = BackendClient(
-        entrypoint_path=Path(__file__).resolve(),
+        worker_script_path=(
+            Path(__file__).resolve().parent.parent
+            / "BACKEND"
+            / "backend.py"
+        ),
     )
     window = MainWindow(client)
     app.aboutToQuit.connect(client.shutdown)
 
     window.show()
+    _activate_window(window)
+    QTimer.singleShot(
+        200,
+        lambda: _activate_window(window),
+    )
     client.start()
     return app.exec()
 
