@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Dict, Iterable, Iterator, List, Optional
+from typing import Dict, Iterable, Iterator, List, Mapping, Optional
 
 
 _IMAGE_SUFFIXES = {
@@ -272,7 +272,9 @@ class AssetCatalog:
         self,
         asset_id: str,
         *,
-        head_mode: str = "",
+        variant_overrides: Optional[
+            Mapping[str, str]
+        ] = None,
     ) -> Optional[dict]:
         record = self.records.get(
             str(asset_id).strip()
@@ -283,17 +285,27 @@ class AssetCatalog:
         ):
             return self.resolve(asset_id)
 
-        target_head_mode = str(
-            head_mode
-        ).strip().casefold()
-        if not target_head_mode:
-            return self.resolve(asset_id)
-
         source_metadata = {
             str(key).casefold(): str(value).strip()
             for key, value in record.metadata.items()
         }
-        if not source_metadata.get("head_mode"):
+        overrides = {
+            str(key).casefold(): str(value).strip()
+            for key, value in dict(
+                variant_overrides or {}
+            ).items()
+            if str(value).strip()
+            and str(key).casefold()
+            in source_metadata
+        }
+        if not overrides:
+            return self.resolve(asset_id)
+
+        if all(
+            source_metadata.get(key, "").casefold()
+            == value.casefold()
+            for key, value in overrides.items()
+        ):
             return self.resolve(asset_id)
 
         for candidate in self.records.values():
@@ -304,19 +316,21 @@ class AssetCatalog:
                 str(key).casefold(): str(value).strip()
                 for key, value in candidate.metadata.items()
             }
-            if (
+
+            if any(
                 candidate_metadata.get(
-                    "head_mode",
+                    key,
                     "",
                 ).casefold()
-                != target_head_mode
+                != target.casefold()
+                for key, target in overrides.items()
             ):
                 continue
 
             comparable_keys = (
                 set(source_metadata)
                 | set(candidate_metadata)
-            ) - {"head_mode"}
+            ) - set(overrides)
             if all(
                 source_metadata.get(key, "").casefold()
                 == candidate_metadata.get(key, "").casefold()
@@ -352,7 +366,9 @@ class AssetCatalog:
         asset_ids: Iterable[str],
         *,
         character_limit: int = 3,
-        head_mode: str = "",
+        variant_overrides: Optional[
+            Mapping[str, str]
+        ] = None,
     ) -> List[dict]:
         resolved = []
         seen = set()
@@ -375,7 +391,7 @@ class AssetCatalog:
             ):
                 record = self.resolve_character_variant(
                     asset_id,
-                    head_mode=head_mode,
+                    variant_overrides=variant_overrides,
                 )
             else:
                 record = self.resolve(asset_id)
