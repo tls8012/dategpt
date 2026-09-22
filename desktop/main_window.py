@@ -3,7 +3,15 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Iterable, Optional
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QParallelAnimationGroup,
+    QPropertyAnimation,
+    QRect,
+    QSequentialAnimationGroup,
+    Qt,
+    Signal,
+)
 from PySide6.QtGui import QAction, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -12,6 +20,7 @@ from PySide6.QtWidgets import (
     QDockWidget,
     QFormLayout,
     QFrame,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -234,6 +243,13 @@ class GamePage(QWidget):
         self._background_asset = None
         self._fallback_background_asset = None
         self._character_assets = []
+        self._character_label_assets = [
+            None,
+            None,
+            None,
+        ]
+        self._active_animations = []
+        self._background_animation = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(22, 18, 22, 22)
@@ -291,31 +307,52 @@ class GamePage(QWidget):
             self.background_label
         )
 
+        self.background_transition_label = QLabel("")
+        self.background_transition_label.setObjectName(
+            "BackgroundLayer"
+        )
+        self.background_transition_label.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+        self.background_transition_label.setMinimumSize(
+            1,
+            1,
+        )
+        self.background_transition_label.hide()
+        self.background_transition_effect = (
+            QGraphicsOpacityEffect(
+                self.background_transition_label
+            )
+        )
+        self.background_transition_effect.setOpacity(0.0)
+        self.background_transition_label.setGraphicsEffect(
+            self.background_transition_effect
+        )
+        visual_stack.addWidget(
+            self.background_transition_label
+        )
+
         self.character_layer = QFrame()
         self.character_layer.setObjectName(
             "CharacterLayer"
         )
-        character_layout = QHBoxLayout(
-            self.character_layer
-        )
-        character_layout.setContentsMargins(0, 0, 0, 0)
-        character_layout.setSpacing(8)
 
         self.stage_hint = QLabel(
-            "배경 / 캐릭터 표시 영역"
+            "배경 / 캐릭터 표시 영역",
+            self.character_layer,
         )
         self.stage_hint.setObjectName("StageHint")
         self.stage_hint.setAlignment(
             Qt.AlignmentFlag.AlignCenter
         )
-        character_layout.addWidget(
-            self.stage_hint,
-            1,
-        )
 
         self.character_labels = []
+        self.character_effects = []
         for _ in range(3):
-            label = QLabel("")
+            label = QLabel(
+                "",
+                self.character_layer,
+            )
             label.setObjectName(
                 "CharacterSprite"
             )
@@ -324,9 +361,12 @@ class GamePage(QWidget):
                 | Qt.AlignmentFlag.AlignBottom
             )
             label.setMinimumSize(1, 1)
+            effect = QGraphicsOpacityEffect(label)
+            effect.setOpacity(1.0)
+            label.setGraphicsEffect(effect)
             label.hide()
-            character_layout.addWidget(label, 1)
             self.character_labels.append(label)
+            self.character_effects.append(effect)
 
         visual_stack.addWidget(
             self.character_layer
@@ -493,11 +533,21 @@ class GamePage(QWidget):
             else None
         )
         self._character_assets = []
+        self._character_label_assets = [
+            None,
+            None,
+            None,
+        ]
         self.background_label.clear()
         self.background_label.hide()
-        for label in self.character_labels:
+        for index, label in enumerate(
+            self.character_labels
+        ):
             label.clear()
             label.hide()
+            self.character_effects[index].setOpacity(
+                1.0
+            )
         self._render_background()
 
         self.needs_setup = bool(
@@ -829,119 +879,632 @@ class GamePage(QWidget):
         assets,
         *,
         clear_characters: bool = False,
+        animate: bool = True,
     ) -> None:
+        previous_background = (
+            self._effective_background_asset()
+        )
+        previous_characters = list(
+            self._character_assets
+        )
+
         self._apply_visual_state(
             assets,
             clear_characters=clear_characters,
         )
-        self._render_background()
 
-        characters = list(
-            self._character_assets
+        current_background = (
+            self._effective_background_asset()
         )
-        for index, label in enumerate(
-            self.character_labels
-        ):
-            if index >= len(characters):
-                label.clear()
-                label.hide()
-                continue
-
-            local_path = str(
-                characters[index].get(
-                    "local_path",
-                    "",
+        if self._asset_id(
+            previous_background
+        ) != self._asset_id(current_background):
+            if animate:
+                self._animate_background_change(
+                    current_background
                 )
+            else:
+                self._render_background()
+        elif self.background_label.pixmap() is None:
+            self._render_background()
+
+        if self._character_state_signature(
+            previous_characters
+        ) != self._character_state_signature(
+            self._character_assets
+        ):
+            self._transition_characters(
+                self._character_assets,
+                animate=animate,
+            )
+        else:
+            self._layout_character_labels(
+                animate=False,
+            )
+
+        self._update_stage_hint()
+
+    def _effective_background_asset(self):
+        if isinstance(
+            self._background_asset,
+            dict,
+        ):
+            return self._background_asset
+        if isinstance(
+            self._fallback_background_asset,
+            dict,
+        ):
+            return self._fallback_background_asset
+        return None
+
+    @staticmethod
+    def _asset_id(asset) -> str:
+        if not isinstance(asset, dict):
+            return ""
+        return str(asset.get("id", "")).strip()
+
+    @staticmethod
+    def _character_key(asset) -> str:
+        if not isinstance(asset, dict):
+            return ""
+        metadata = asset.get("metadata", {})
+        if isinstance(metadata, dict):
+            name = str(
+                metadata.get("character", "")
             ).strip()
-            pixmap = QPixmap(local_path)
-            if pixmap.isNull():
-                label.clear()
-                label.hide()
-                continue
+            if name:
+                return name.casefold()
+        return str(
+            asset.get("id", "")
+        ).strip().casefold()
 
-            slot_width = max(
-                1,
-                self.visual_area.width()
-                // max(1, len(characters)),
+    def _character_state_signature(
+        self,
+        assets,
+    ):
+        return tuple(
+            (
+                self._character_key(asset),
+                self._asset_id(asset),
             )
-            target_height = max(
-                1,
-                self.visual_area.height(),
-            )
-            scaled = pixmap.scaled(
-                slot_width,
-                target_height,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            label.setPixmap(scaled)
-            label.show()
-
-        any_character = any(
-            label.pixmap() is not None
-            and not label.pixmap().isNull()
-            for label in self.character_labels
-        )
-        has_background = (
-            self.background_label.pixmap() is not None
-            and not self.background_label.pixmap().isNull()
-        )
-        self.stage_hint.setVisible(
-            not any_character
-            and not has_background
+            for asset in assets
+            if isinstance(asset, dict)
         )
 
-    def _render_background(self) -> None:
-        asset = self._background_asset
+    def _scaled_background_pixmap(
+        self,
+        asset,
+    ):
         if not isinstance(asset, dict):
-            asset = self._fallback_background_asset
-        if not isinstance(asset, dict):
-            self.background_label.clear()
-            self.background_label.hide()
-            return
-
+            return QPixmap()
         local_path = str(
             asset.get("local_path", "")
         ).strip()
         pixmap = QPixmap(local_path)
         if pixmap.isNull():
-            self.background_label.clear()
-            self.background_label.hide()
-            return
-
-        scaled = pixmap.scaled(
+            return pixmap
+        return pixmap.scaled(
             max(1, self.visual_area.width()),
             max(1, self.visual_area.height()),
             Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
-        self.background_label.setPixmap(scaled)
+
+    def _render_background(self) -> None:
+        asset = self._effective_background_asset()
+        pixmap = self._scaled_background_pixmap(
+            asset
+        )
+        if pixmap.isNull():
+            self.background_label.clear()
+            self.background_label.hide()
+            return
+        self.background_label.setPixmap(pixmap)
         self.background_label.show()
+
+    def _animate_background_change(
+        self,
+        asset,
+    ) -> None:
+        pixmap = self._scaled_background_pixmap(
+            asset
+        )
+        if pixmap.isNull():
+            self._render_background()
+            return
+
+        if self._background_animation is not None:
+            self._background_animation.stop()
+            overlay = (
+                self.background_transition_label.pixmap()
+            )
+            if (
+                overlay is not None
+                and not overlay.isNull()
+            ):
+                self.background_label.setPixmap(
+                    overlay
+                )
+                self.background_label.show()
+            self.background_transition_label.hide()
+
+        self.background_transition_label.setPixmap(
+            pixmap
+        )
+        self.background_transition_effect.setOpacity(
+            0.0
+        )
+        self.background_transition_label.show()
+
+        animation = QPropertyAnimation(
+            self.background_transition_effect,
+            b"opacity",
+            self,
+        )
+        animation.setDuration(350)
+        animation.setStartValue(0.0)
+        animation.setEndValue(1.0)
+        animation.setEasingCurve(
+            QEasingCurve.Type.InOutQuad
+        )
+
+        def finish_background():
+            self.background_label.setPixmap(
+                pixmap
+            )
+            self.background_label.show()
+            self.background_transition_label.hide()
+            self.background_transition_effect.setOpacity(
+                0.0
+            )
+            self._background_animation = None
+
+        animation.finished.connect(
+            finish_background
+        )
+        self._background_animation = animation
+        animation.start()
+
+    def _target_character_rects(
+        self,
+        count: int,
+    ):
+        width = max(
+            1,
+            self.character_layer.width(),
+        )
+        height = max(
+            1,
+            self.character_layer.height(),
+        )
+        sprite_width = max(
+            1,
+            int(width * 0.46),
+        )
+
+        if count <= 1:
+            centers = (0.50,)
+        elif count == 2:
+            centers = (0.29, 0.71)
+        else:
+            centers = (0.18, 0.50, 0.82)
+
+        return [
+            QRect(
+                int(width * center)
+                - sprite_width // 2,
+                0,
+                sprite_width,
+                height,
+            )
+            for center in centers[:count]
+        ]
+
+    def _set_character_pixmap(
+        self,
+        label_index: int,
+        asset,
+    ) -> bool:
+        label = self.character_labels[
+            label_index
+        ]
+        local_path = str(
+            asset.get("local_path", "")
+        ).strip()
+        pixmap = QPixmap(local_path)
+        if pixmap.isNull():
+            label.clear()
+            return False
+
+        rect = label.geometry()
+        scaled = pixmap.scaled(
+            max(1, rect.width()),
+            max(1, rect.height()),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        label.setPixmap(scaled)
+        return True
+
+    def _transition_characters(
+        self,
+        assets,
+        *,
+        animate: bool,
+    ) -> None:
+        target_assets = [
+            dict(asset)
+            for asset in list(assets or [])[:3]
+            if isinstance(asset, dict)
+        ]
+        target_rects = self._target_character_rects(
+            len(target_assets)
+        )
+
+        old_by_key = {}
+        for index, asset in enumerate(
+            self._character_label_assets
+        ):
+            key = self._character_key(asset)
+            if key:
+                old_by_key[key] = index
+
+        used = set()
+        assignments = []
+        for order, asset in enumerate(target_assets):
+            key = self._character_key(asset)
+            label_index = old_by_key.get(key)
+            if (
+                label_index is None
+                or label_index in used
+            ):
+                label_index = next(
+                    (
+                        index
+                        for index in range(3)
+                        if index not in used
+                        and self._character_label_assets[
+                            index
+                        ] is None
+                    ),
+                    None,
+                )
+            if label_index is None:
+                label_index = next(
+                    index
+                    for index in range(3)
+                    if index not in used
+                )
+            used.add(label_index)
+            assignments.append(
+                (
+                    label_index,
+                    asset,
+                    target_rects[order],
+                )
+            )
+
+        assigned_indices = {
+            index
+            for index, _, _ in assignments
+        }
+        for index in range(3):
+            if index in assigned_indices:
+                continue
+            if (
+                self._character_label_assets[index]
+                is not None
+            ):
+                self._fade_out_character(
+                    index,
+                    animate=animate,
+                )
+
+        for index, asset, target_rect in assignments:
+            old_asset = self._character_label_assets[
+                index
+            ]
+            old_key = self._character_key(old_asset)
+            new_key = self._character_key(asset)
+
+            if old_asset is None:
+                self._show_new_character(
+                    index,
+                    asset,
+                    target_rect,
+                    animate=animate,
+                )
+                continue
+
+            if old_key == new_key:
+                pose_changed = (
+                    self._asset_id(old_asset)
+                    != self._asset_id(asset)
+                )
+                self._move_character(
+                    index,
+                    target_rect,
+                    animate=animate,
+                )
+                if pose_changed:
+                    self._fade_replace_character(
+                        index,
+                        asset,
+                        animate=animate,
+                    )
+                else:
+                    self._character_label_assets[
+                        index
+                    ] = dict(asset)
+                    self._set_character_pixmap(
+                        index,
+                        asset,
+                    )
+                continue
+
+            self._fade_replace_character(
+                index,
+                asset,
+                target_rect=target_rect,
+                animate=animate,
+            )
+
+    def _show_new_character(
+        self,
+        index: int,
+        asset,
+        target_rect: QRect,
+        *,
+        animate: bool,
+    ) -> None:
+        label = self.character_labels[index]
+        effect = self.character_effects[index]
+        self._character_label_assets[index] = (
+            dict(asset)
+        )
+
+        start_rect = QRect(target_rect)
+        start_rect.translate(
+            -24 if target_rect.center().x()
+            <= self.character_layer.width() // 2
+            else 24,
+            0,
+        )
+        label.setGeometry(
+            start_rect if animate else target_rect
+        )
+        self._set_character_pixmap(
+            index,
+            asset,
+        )
+        label.show()
+
+        if not animate:
+            effect.setOpacity(1.0)
+            return
+
+        effect.setOpacity(0.0)
+        group = QParallelAnimationGroup(self)
+        move = QPropertyAnimation(
+            label,
+            b"geometry",
+            group,
+        )
+        move.setDuration(220)
+        move.setStartValue(start_rect)
+        move.setEndValue(target_rect)
+        move.setEasingCurve(
+            QEasingCurve.Type.OutCubic
+        )
+        fade = QPropertyAnimation(
+            effect,
+            b"opacity",
+            group,
+        )
+        fade.setDuration(180)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        self._start_animation(group)
+
+    def _fade_out_character(
+        self,
+        index: int,
+        *,
+        animate: bool,
+    ) -> None:
+        label = self.character_labels[index]
+        effect = self.character_effects[index]
+
+        def clear_label():
+            label.clear()
+            label.hide()
+            effect.setOpacity(1.0)
+            self._character_label_assets[index] = (
+                None
+            )
+
+        if not animate:
+            clear_label()
+            return
+
+        animation = QPropertyAnimation(
+            effect,
+            b"opacity",
+            self,
+        )
+        animation.setDuration(180)
+        animation.setStartValue(
+            effect.opacity()
+        )
+        animation.setEndValue(0.0)
+        animation.finished.connect(clear_label)
+        self._start_animation(animation)
+
+    def _move_character(
+        self,
+        index: int,
+        target_rect: QRect,
+        *,
+        animate: bool,
+    ) -> None:
+        label = self.character_labels[index]
+        if not animate:
+            label.setGeometry(target_rect)
+            return
+        if label.geometry() == target_rect:
+            return
+
+        animation = QPropertyAnimation(
+            label,
+            b"geometry",
+            self,
+        )
+        animation.setDuration(250)
+        animation.setStartValue(
+            label.geometry()
+        )
+        animation.setEndValue(target_rect)
+        animation.setEasingCurve(
+            QEasingCurve.Type.InOutCubic
+        )
+        self._start_animation(animation)
+
+    def _fade_replace_character(
+        self,
+        index: int,
+        asset,
+        *,
+        target_rect=None,
+        animate: bool,
+    ) -> None:
+        label = self.character_labels[index]
+        effect = self.character_effects[index]
+        if target_rect is not None:
+            self._move_character(
+                index,
+                target_rect,
+                animate=animate,
+            )
+
+        def replace_pixmap():
+            self._character_label_assets[index] = (
+                dict(asset)
+            )
+            self._set_character_pixmap(
+                index,
+                asset,
+            )
+            label.show()
+
+        if not animate:
+            replace_pixmap()
+            effect.setOpacity(1.0)
+            return
+
+        sequence = QSequentialAnimationGroup(self)
+        fade_out = QPropertyAnimation(
+            effect,
+            b"opacity",
+            sequence,
+        )
+        fade_out.setDuration(90)
+        fade_out.setStartValue(
+            effect.opacity()
+        )
+        fade_out.setEndValue(0.0)
+        fade_out.finished.connect(
+            replace_pixmap
+        )
+
+        fade_in = QPropertyAnimation(
+            effect,
+            b"opacity",
+            sequence,
+        )
+        fade_in.setDuration(120)
+        fade_in.setStartValue(0.0)
+        fade_in.setEndValue(1.0)
+        self._start_animation(sequence)
+
+    def _layout_character_labels(
+        self,
+        *,
+        animate: bool,
+    ) -> None:
+        assets = list(self._character_assets)
+        if not assets:
+            return
+        self._transition_characters(
+            assets,
+            animate=animate,
+        )
+
+    def _start_animation(self, animation) -> None:
+        self._active_animations.append(animation)
+
+        def cleanup():
+            try:
+                self._active_animations.remove(
+                    animation
+                )
+            except ValueError:
+                pass
+
+        animation.finished.connect(cleanup)
+        animation.start()
+
+    def _update_stage_hint(self) -> None:
+        any_character = any(
+            label.pixmap() is not None
+            and not label.pixmap().isNull()
+            for label in self.character_labels
+        )
+        background = self.background_label.pixmap()
+        has_background = (
+            background is not None
+            and not background.isNull()
+        )
+        self.stage_hint.setVisible(
+            not any_character
+            and not has_background
+        )
+        self.stage_hint.setGeometry(
+            0,
+            0,
+            max(1, self.character_layer.width()),
+            max(1, self.character_layer.height()),
+        )
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         if hasattr(self, "background_label"):
             self._render_background()
-        if (
-            hasattr(self, "character_labels")
-            and 0 <= self._segment_index
-            < len(self._segments)
-        ):
-            current_segment = self._segments[
-                self._segment_index
-            ]
-            self._render_assets(
-                current_segment.get(
-                    "resolved_assets",
-                    [],
-                ),
-                clear_characters=bool(
-                    current_segment.get(
-                        "clear_characters",
-                        False,
-                    )
-                ),
+            transition = (
+                self.background_transition_label.pixmap()
+                if hasattr(
+                    self,
+                    "background_transition_label",
+                )
+                else None
             )
+            if (
+                transition is not None
+                and not transition.isNull()
+                and self.background_transition_label.isVisible()
+            ):
+                asset = self._effective_background_asset()
+                scaled = self._scaled_background_pixmap(
+                    asset
+                )
+                if not scaled.isNull():
+                    self.background_transition_label.setPixmap(
+                        scaled
+                    )
+        if hasattr(self, "character_layer"):
+            self._layout_character_labels(
+                animate=False
+            )
+            self._update_stage_hint()
 
     def _update_page_hint(self) -> None:
         if not self._segments:
