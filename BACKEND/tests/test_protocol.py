@@ -877,6 +877,52 @@ class ProtocolTests(unittest.TestCase):
                 ).is_file()
             )
 
+    def test_presentation_uses_current_head_mode_variant(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+            app.handle({
+                "type": "set_controls",
+                "controls": {
+                    "head_mode": "logo",
+                },
+            })
+
+            emitted = []
+            app.handle(
+                {
+                    "type": "play",
+                    "text": "show asset",
+                },
+                emit=emitted.append,
+            )
+            segment = [
+                event["segment"]
+                for event in emitted
+                if event["type"]
+                == "presentation_segment"
+            ][0]
+            self.assertEqual(
+                segment["assets"],
+                ["A001"],
+            )
+            self.assertEqual(
+                segment["resolved_assets"][0]["id"],
+                "A002",
+            )
+            self.assertEqual(
+                segment["resolved_assets"][0][
+                    "source_asset_id"
+                ],
+                "A001",
+            )
+
     def test_head_mode_control_can_reresolve_visible_scg_without_llm(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
