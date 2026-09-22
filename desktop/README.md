@@ -37,10 +37,10 @@ python -m pip install -r requirements.txt
 python desktop\main.py
 ```
 
-In source mode the frontend launches the same desktop entrypoint again as
-`--backend-worker` under the current interpreter. In packaged mode it launches
-the packaged DateGPT executable itself as `--backend-worker`. The JSONL
-transport is identical in both cases.
+In source mode the frontend launches `BACKEND/backend.py` under the current
+interpreter. In packaged mode the windowed `DateGPT` executable launches the
+bundled `DateGPTWorker` executable. The JSONL transport is identical in both
+cases.
 
 ## Implemented
 
