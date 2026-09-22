@@ -1,0 +1,81 @@
+name: package-builds
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "BACKEND/**"
+      - "desktop/**"
+      - ".scaffolding/**"
+      - "packaging/**"
+      - "requirements*.txt"
+      - ".github/workflows/package-builds.yml"
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: DateGPT-macOS
+          - os: windows-latest
+            artifact: DateGPT-Windows
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packaging dependencies
+        run: python -m pip install -r requirements-build.txt
+
+      - name: Build DateGPT bundle
+        run: python -m PyInstaller --noconfirm --clean packaging/DateGPT.spec
+
+      - name: Smoke test packaged backend worker (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          printf '{"type":"ping","request_id":"pkg-ping"}\n{"type":"shutdown","request_id":"pkg-stop"}\n' | ./dist/DateGPT.app/Contents/MacOS/DateGPT --backend-worker > packaged-worker.out 2> packaged-worker.err
+          cat packaged-worker.err
+          cat packaged-worker.out
+          grep -q 'pong' packaged-worker.out
+          grep -q 'shutdown_complete' packaged-worker.out
+
+      - name: Smoke test packaged backend worker (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $inputLines = @(
+            '{"type":"ping","request_id":"pkg-ping"}',
+            '{"type":"shutdown","request_id":"pkg-stop"}'
+          )
+          $inputLines | & .\dist\DateGPT\DateGPT.exe --backend-worker 1> packaged-worker.out 2> packaged-worker.err
+          Get-Content packaged-worker.err
+          Get-Content packaged-worker.out
+          if (-not (Select-String -Path packaged-worker.out -Pattern 'pong' -Quiet)) { throw "packaged backend ping failed" }
+          if (-not (Select-String -Path packaged-worker.out -Pattern 'shutdown_complete' -Quiet)) { throw "packaged backend shutdown failed" }
+
+      - name: Archive macOS app
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent dist/DateGPT.app DateGPT-macOS.zip
+
+      - name: Archive Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path .\dist\DateGPT -DestinationPath DateGPT-Windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            DateGPT-macOS.zip
+            DateGPT-Windows.zip
+          if-no-files-found: error
