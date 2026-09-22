@@ -38,6 +38,38 @@ def main() -> int:
             QImage.Format.Format_ARGB32,
         ).save(str(character))
 
+        window.game.set_session({
+            "game_name": "smoke",
+            "game_id": "fallback",
+            "needs_setup": False,
+            "fallback_background": {
+                "id": "B001",
+                "kind": "background",
+                "local_path": str(background),
+            },
+        })
+        window.game.set_segments([
+            {
+                "kind": "narration",
+                "speaker": "",
+                "text": "fallback background",
+                "assets": [],
+                "resolved_assets": [],
+            },
+        ])
+        fallback_pixmap = (
+            window.game.background_label.pixmap()
+        )
+        if (
+            fallback_pixmap is None
+            or fallback_pixmap.isNull()
+        ):
+            print(
+                "fallback background did not render",
+                file=sys.stderr,
+            )
+            return 1
+
         window.game.set_segments([
             {
                 "kind": "narration",
