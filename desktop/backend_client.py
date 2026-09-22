@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
@@ -39,6 +39,9 @@ class BackendClient(QObject):
         self._stdout_buffer = ""
         self._stderr_buffer = ""
         self._request_counter = 0
+        self._backend_ready = False
+        self._expected_shutdown = False
+        self._recent_stderr: List[str] = []
 
         self.process.started.connect(self._on_started)
         self.process.finished.connect(self._on_finished)
@@ -50,9 +53,20 @@ class BackendClient(QObject):
     def is_running(self) -> bool:
         return self.process.state() != QProcess.ProcessState.NotRunning
 
+    @property
+    def is_ready(self) -> bool:
+        return (
+            self._backend_ready
+            and self.process.state()
+            == QProcess.ProcessState.Running
+        )
+
     def start(self) -> None:
         if self.is_running:
             return
+        self._backend_ready = False
+        self._expected_shutdown = False
+        self._recent_stderr.clear()
         if not self.backend_path.exists():
             self.fatal_error.emit(
                 "backend.py를 찾을 수 없습니다: {}".format(
@@ -69,8 +83,10 @@ class BackendClient(QObject):
         self.process.start()
 
     def send(self, payload: Dict[str, Any]) -> str:
-        if not self.is_running:
-            raise RuntimeError("DateGPT backend is not running")
+        if not self.is_ready:
+            raise RuntimeError(
+                self._not_ready_message()
+            )
 
         message = dict(payload)
         request_id = message.get("request_id")
@@ -96,6 +112,7 @@ class BackendClient(QObject):
         return str(request_id)
 
     def shutdown(self) -> None:
+        self._expected_shutdown = True
         if not self.is_running:
             return
         try:
@@ -110,7 +127,6 @@ class BackendClient(QObject):
             self.process.kill()
 
     def _on_started(self) -> None:
-        self.running_changed.emit(True)
         self.debug_line.emit(
             "PROCESS started pid={}".format(
                 self.process.processId()
@@ -122,7 +138,11 @@ class BackendClient(QObject):
         exit_code: int,
         exit_status: QProcess.ExitStatus,
     ) -> None:
-        self.running_changed.emit(False)
+        was_ready = self._backend_ready
+        self._backend_ready = False
+        if was_ready:
+            self.running_changed.emit(False)
+
         self.debug_line.emit(
             "PROCESS finished code={} status={}".format(
                 exit_code,
@@ -130,16 +150,34 @@ class BackendClient(QObject):
             )
         )
 
+        if self._expected_shutdown:
+            return
+
+        self.fatal_error.emit(
+            self._finished_message(
+                exit_code,
+                exit_status,
+            )
+        )
+
     def _on_process_error(
         self,
         error: QProcess.ProcessError,
     ) -> None:
-        message = "QProcess error {}: {}".format(
+        message = (
+            "QProcess error {}: {}\n"
+            "Python: {}\n"
+            "Backend: {}{}"
+        ).format(
             error.name,
             self.process.errorString(),
+            self.python_path,
+            self.backend_path,
+            self._stderr_suffix(),
         )
         self.debug_line.emit(message)
-        self.fatal_error.emit(message)
+        if not self._expected_shutdown:
+            self.fatal_error.emit(message)
 
     def _read_stdout(self) -> None:
         chunk = bytes(
@@ -200,7 +238,60 @@ class BackendClient(QObject):
         self.event_received.emit(event)
 
     def _handle_stderr_line(self, line: str) -> None:
+        self._recent_stderr.append(line)
+        if len(self._recent_stderr) > 20:
+            del self._recent_stderr[:-20]
         self.debug_line.emit("ERR " + line)
+
+        if (
+            not self._backend_ready
+            and line.startswith("[protocol] READY ")
+        ):
+            self._backend_ready = True
+            self.running_changed.emit(True)
+
+    def _stderr_suffix(self) -> str:
+        if not self._recent_stderr:
+            return ""
+        return "\n\nBackend stderr:\n" + "\n".join(
+            self._recent_stderr[-12:]
+        )
+
+    def _not_ready_message(self) -> str:
+        state = self.process.state()
+        if state == QProcess.ProcessState.Starting:
+            status = "backend process is starting"
+        elif state == QProcess.ProcessState.Running:
+            status = "backend process started but is not ready"
+        else:
+            status = "backend process is not running"
+
+        return (
+            "{}\nPython: {}\nBackend: {}{}"
+        ).format(
+            status,
+            self.python_path,
+            self.backend_path,
+            self._stderr_suffix(),
+        )
+
+    def _finished_message(
+        self,
+        exit_code: int,
+        exit_status: QProcess.ExitStatus,
+    ) -> str:
+        return (
+            "DateGPT backend exited before it was usable.\n"
+            "exit_code={} status={}\n"
+            "Python: {}\n"
+            "Backend: {}{}"
+        ).format(
+            exit_code,
+            exit_status.name,
+            self.python_path,
+            self.backend_path,
+            self._stderr_suffix(),
+        )
 
 
 def _redact_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
