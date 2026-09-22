@@ -132,7 +132,8 @@ def main() -> int:
             },
         ])
         if any(
-            label.isVisible()
+            label.pixmap() is not None
+            and not label.pixmap().isNull()
             for label in window.game.character_labels
         ):
             print(
