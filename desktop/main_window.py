@@ -285,8 +285,11 @@ class GamePage(QWidget):
         self.stage = QFrame()
         self.stage.setObjectName("Stage")
         stage_layout = QVBoxLayout(self.stage)
-        stage_layout.setContentsMargins(22, 22, 22, 18)
-        stage_layout.setSpacing(12)
+        stage_layout.setContentsMargins(0, 0, 0, 0)
+        stage_layout.setSpacing(0)
+
+        self._panel_margin = 22
+        self._panel_height = 132
 
         self.visual_area = QFrame()
         self.visual_area.setObjectName("VisualArea")
@@ -377,8 +380,16 @@ class GamePage(QWidget):
         visual_stack.addWidget(
             self.character_layer
         )
+
+        self.overlay_layer = QFrame()
+        self.overlay_layer.setObjectName(
+            "OverlayLayer"
+        )
+        visual_stack.addWidget(
+            self.overlay_layer
+        )
         visual_stack.setCurrentWidget(
-            self.character_layer
+            self.overlay_layer
         )
 
         stage_layout.addWidget(
@@ -386,7 +397,9 @@ class GamePage(QWidget):
             1,
         )
 
-        self.dialogue = QFrame()
+        self.dialogue = QFrame(
+            self.overlay_layer
+        )
         self.dialogue.setObjectName("DialogueCard")
         dialogue_layout = QVBoxLayout(self.dialogue)
         dialogue_layout.setContentsMargins(22, 15, 22, 13)
@@ -421,7 +434,6 @@ class GamePage(QWidget):
         )
         dialogue_layout.addWidget(self.page_hint)
 
-        stage_layout.addWidget(self.dialogue)
         root.addWidget(self.stage, 1)
 
         self.onboarding_frame = QFrame()
@@ -441,22 +453,23 @@ class GamePage(QWidget):
         root.addWidget(self.onboarding_frame)
         self.onboarding_frame.hide()
 
-        self.input_frame = QFrame()
+        self.input_frame = QFrame(
+            self.overlay_layer
+        )
         self.input_frame.setObjectName("InputFrame")
         input_row = QHBoxLayout(self.input_frame)
-        input_row.setContentsMargins(0, 0, 0, 0)
+        input_row.setContentsMargins(22, 15, 16, 13)
+        input_row.setSpacing(12)
 
         self.input_box = QPlainTextEdit()
         self.input_box.setPlaceholderText(
             "하고 싶은 말을 입력하세요. Ctrl+Enter로 전송, Esc로 닫기"
         )
-        self.input_box.setMaximumHeight(92)
         self.send_button = QPushButton("전송")
         self.send_button.setObjectName("Primary")
         self.send_button.setMinimumWidth(100)
         input_row.addWidget(self.input_box, 1)
         input_row.addWidget(self.send_button)
-        root.addWidget(self.input_frame)
         self.input_frame.hide()
 
         self.status_label = QLabel("")
@@ -526,6 +539,7 @@ class GamePage(QWidget):
             self,
             activated=self.hide_input,
         )
+        self._layout_overlay_panels()
         self._sync_input_shortcuts()
 
     def set_session(self, event: Dict[str, Any]) -> None:
@@ -824,7 +838,9 @@ class GamePage(QWidget):
     def show_input(self) -> None:
         if self._waiting or self.input_frame.isVisible():
             return
+        self._layout_overlay_panels()
         self.input_frame.show()
+        self.input_frame.raise_()
         self.input_box.setFocus(
             Qt.FocusReason.ShortcutFocusReason
         )
@@ -833,6 +849,7 @@ class GamePage(QWidget):
     def hide_input(self) -> None:
         if self.input_frame.isVisible():
             self.input_frame.hide()
+        self.dialogue.raise_()
         self.setFocus(
             Qt.FocusReason.OtherFocusReason
         )
@@ -1564,8 +1581,59 @@ class GamePage(QWidget):
             max(1, self.character_layer.height()),
         )
 
+    def _layout_overlay_panels(self) -> None:
+        if not hasattr(self, "overlay_layer"):
+            return
+
+        width = max(
+            1,
+            self.overlay_layer.width(),
+        )
+        height = max(
+            1,
+            self.overlay_layer.height(),
+        )
+        margin = max(
+            0,
+            min(
+                self._panel_margin,
+                width // 4,
+                height // 4,
+            ),
+        )
+        available_height = max(
+            1,
+            height - margin * 2,
+        )
+        panel_height = max(
+            1,
+            min(
+                self._panel_height,
+                available_height,
+            ),
+        )
+        panel_width = max(
+            1,
+            width - margin * 2,
+        )
+        panel_rect = QRect(
+            margin,
+            height - margin - panel_height,
+            panel_width,
+            panel_height,
+        )
+
+        self.dialogue.setGeometry(panel_rect)
+        self.input_frame.setGeometry(panel_rect)
+
+        if self.input_frame.isVisible():
+            self.input_frame.raise_()
+        else:
+            self.dialogue.raise_()
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        self._layout_overlay_panels()
         if hasattr(self, "background_label"):
             self._render_background()
             transition = (
