@@ -102,9 +102,51 @@ def main() -> int:
             },
         ])
         persisted = window.game.background_label.pixmap()
+        persisted_character = (
+            window.game.character_labels[0].pixmap()
+        )
         if persisted is None or persisted.isNull():
             print(
                 "background did not persist",
+                file=sys.stderr,
+            )
+            return 1
+        if (
+            persisted_character is None
+            or persisted_character.isNull()
+        ):
+            print(
+                "character SCG did not persist",
+                file=sys.stderr,
+            )
+            return 1
+
+        window.game.set_segments([
+            {
+                "kind": "narration",
+                "speaker": "",
+                "text": "characters leave",
+                "assets": [],
+                "resolved_assets": [],
+                "clear_characters": True,
+            },
+        ])
+        if any(
+            label.isVisible()
+            for label in window.game.character_labels
+        ):
+            print(
+                "clear_characters did not clear SCGs",
+                file=sys.stderr,
+            )
+            return 1
+        if (
+            window.game.background_label.pixmap()
+            is None
+            or window.game.background_label.pixmap().isNull()
+        ):
+            print(
+                "clearing characters also cleared background",
                 file=sys.stderr,
             )
             return 1
