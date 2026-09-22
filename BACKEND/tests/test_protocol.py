@@ -283,6 +283,10 @@ class ProtocolTests(unittest.TestCase):
                 installed[0]["cartridge"]["build_version"],
                 "1",
             )
+            self.assertEqual(
+                installed[0]["cartridge"]["asset_count"],
+                0,
+            )
 
             opened = app.handle({
                 "type": "open_session",
@@ -303,6 +307,43 @@ class ProtocolTests(unittest.TestCase):
                 opened[0]["build_version"],
                 "1",
             )
+            self.assertEqual(
+                opened[0]["asset_count"],
+                0,
+            )
+            self.assertIsNone(
+                opened[0]["fallback_background"]
+            )
+            self.assertEqual(
+                len(app.active_session.asset_catalog),
+                0,
+            )
+
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+            emitted = []
+            app.handle(
+                {
+                    "type": "play",
+                    "text": "no visual assets",
+                },
+                emit=emitted.append,
+            )
+            segment = [
+                item["segment"]
+                for item in emitted
+                if item["type"]
+                == "presentation_segment"
+            ][0]
+            self.assertEqual(
+                segment["resolved_assets"],
+                [],
+            )
+
             self.assertTrue(
                 app.active_session.scenario.exists(
                     "entities/characters/ChatGPT.md"
