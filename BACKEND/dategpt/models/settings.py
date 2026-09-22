@@ -8,15 +8,34 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 
-SUPPORTED_PROVIDERS = ("openai", "anthropic")
+SUPPORTED_PROVIDERS = (
+    "openai",
+    "anthropic",
+    "google_genai",
+    "xai",
+)
+_PROVIDER_ALIASES = {
+    "gemini": "google_genai",
+    "google": "google_genai",
+    "grok": "xai",
+}
 _ENV_KEYS = {
-    "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": ("OPENAI_API_KEY",),
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "google_genai": (
+        "GOOGLE_API_KEY",
+        "GEMINI_API_KEY",
+    ),
+    "xai": ("XAI_API_KEY",),
 }
 
 
 def normalize_provider(value: str) -> str:
     provider = str(value).strip().casefold()
+    provider = _PROVIDER_ALIASES.get(
+        provider,
+        provider,
+    )
     if provider not in SUPPORTED_PROVIDERS:
         raise ValueError(
             "provider must be one of: {}".format(
@@ -154,10 +173,13 @@ class ModelSettingsStore:
         if saved:
             return saved, "saved"
 
-        env_name = _ENV_KEYS[name]
-        env_value = os.environ.get(env_name, "").strip()
-        if env_value:
-            return env_value, "environment"
+        for env_name in _ENV_KEYS[name]:
+            env_value = os.environ.get(
+                env_name,
+                "",
+            ).strip()
+            if env_value:
+                return env_value, "environment"
 
         return "", "missing"
 

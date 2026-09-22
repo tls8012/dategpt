@@ -3,7 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional
 
-from .settings import ModelSettingsStore, normalize_provider
+from .settings import (
+    SUPPORTED_PROVIDERS,
+    ModelSettingsStore,
+    normalize_provider,
+)
 
 
 @dataclass(frozen=True)
@@ -203,13 +207,17 @@ class ModelSettingsRouter:
     def _usage_model(self) -> ModelSettingsResponse:
         return ModelSettingsResponse(
             True,
-            "사용법: !모델 <openai|anthropic> <모델명>",
+            "사용법: !모델 <{}> <모델명>".format(
+                "|".join(SUPPORTED_PROVIDERS)
+            ),
             self.store.public_snapshot(),
         )
 
     def _usage_key(self) -> ModelSettingsResponse:
         return ModelSettingsResponse(
             True,
-            "사용법: !api_key <openai|anthropic> <키|삭제>",
+            "사용법: !api_key <{}> <키|삭제>".format(
+                "|".join(SUPPORTED_PROVIDERS)
+            ),
             self.store.public_snapshot(),
         )
