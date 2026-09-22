@@ -67,6 +67,57 @@ def main() -> int:
         )
         return 1
 
+    sent_requests = []
+    original_send = window._send
+    window._send = (
+        lambda payload, kind: sent_requests.append(
+            (dict(payload), kind)
+        )
+    )
+    window.active_session = {
+        "controls": {
+            "appearance": "logo",
+        },
+        "control_options": {
+            "appearance": ["logo", "human"],
+        },
+    }
+    window.game._character_assets = [
+        {
+            "id": "A001",
+            "kind": "character",
+            "metadata": {
+                "character": "Test",
+                "appearance": "logo",
+            },
+        }
+    ]
+    window._handle_event({
+        "type": "control_state",
+        "controls": {
+            "appearance": "human",
+        },
+        "control_options": {
+            "appearance": ["logo", "human"],
+        },
+    })
+    if (
+        not sent_requests
+        or sent_requests[-1][0].get("type")
+        != "resolve_visual_assets"
+        or sent_requests[-1][0].get(
+            "asset_ids"
+        )
+        != ["A001"]
+    ):
+        print(
+            "enum control change did not request SCG re-resolution",
+            file=sys.stderr,
+        )
+        return 1
+    window._send = original_send
+    window.active_session = {}
+
     crop_source = QImage(
         20,
         100,
