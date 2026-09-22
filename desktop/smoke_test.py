@@ -6,7 +6,12 @@ from pathlib import Path
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QColor, QImage, QPixmap
-from PySide6.QtWidgets import QApplication, QStackedLayout
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QLineEdit,
+    QStackedLayout,
+)
 
 from backend_client import BackendClient
 from main_window import MainWindow
@@ -26,6 +31,41 @@ def main() -> int:
     window.resize(1200, 800)
     window.show()
     app.processEvents()
+
+    window.settings_dialog.apply_controls(
+        {
+            "language": "한국어",
+            "initiative": "medium",
+            "world_consistency": "medium",
+            "gender": "female",
+            "freeform": "anything",
+        },
+        {
+            "gender": ["female", "male"],
+        },
+    )
+    if not isinstance(
+        window.settings_dialog._extra_inputs[
+            "gender"
+        ],
+        QComboBox,
+    ):
+        print(
+            "finite-choice control is not a dropdown",
+            file=sys.stderr,
+        )
+        return 1
+    if not isinstance(
+        window.settings_dialog._extra_inputs[
+            "freeform"
+        ],
+        QLineEdit,
+    ):
+        print(
+            "freeform control unexpectedly became dropdown",
+            file=sys.stderr,
+        )
+        return 1
 
     crop_source = QImage(
         20,
