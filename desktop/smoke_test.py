@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import QTimer
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import QApplication, QStackedLayout
 
 from backend_client import BackendClient
@@ -23,6 +23,50 @@ def main() -> int:
         )
     )
     window = MainWindow(client)
+
+    crop_source = QImage(
+        20,
+        100,
+        QImage.Format.Format_ARGB32,
+    )
+    crop_source.fill(0)
+    for y in range(10, 90):
+        for x in range(5, 15):
+            crop_source.setPixelColor(
+                x,
+                y,
+                QColor(255, 255, 255, 255),
+            )
+
+    cropped = window.game._upper_body_pixmap(
+        QPixmap.fromImage(crop_source)
+    )
+    if not (
+        50 <= cropped.height() <= 56
+    ):
+        print(
+            "upper-body SCG crop has unexpected height",
+            file=sys.stderr,
+        )
+        return 1
+
+    # A cartridge with no backgrounds is still valid.
+    window.game.set_session({
+        "game_name": "no-background",
+        "game_id": "smoke",
+        "needs_setup": False,
+        "fallback_background": None,
+    })
+    if (
+        window.game.background_label.pixmap()
+        is not None
+        and not window.game.background_label.pixmap().isNull()
+    ):
+        print(
+            "background unexpectedly exists",
+            file=sys.stderr,
+        )
+        return 1
 
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
