@@ -24,6 +24,9 @@ jobs:
         env:
           PYTHONPATH: .
         run: python -m unittest discover -s tests -v
+      - name: Test desktop backend client
+        working-directory: .
+        run: python -m unittest desktop.test_backend_client -v
       - name: Compile desktop frontend
         working-directory: .
         run: python -m py_compile desktop/*.py
