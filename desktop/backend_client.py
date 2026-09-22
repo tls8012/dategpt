@@ -11,10 +11,9 @@ from PySide6.QtCore import QObject, QProcess, Signal
 class BackendClient(QObject):
     """Signal-driven JSONL transport for the DateGPT backend worker.
 
-    Source mode launches this desktop entrypoint again with
-    --backend-worker under the current Python interpreter. Frozen mode launches
-    the packaged DateGPT executable itself with --backend-worker, so no external
-    Python installation is required.
+    Source mode launches BACKEND/backend.py under the current interpreter.
+    Frozen mode launches the bundled DateGPTWorker executable, so the GUI can
+    be a normal windowed application while the worker retains stdin/stdout.
     """
 
     event_received = Signal(object)
@@ -25,7 +24,7 @@ class BackendClient(QObject):
     def __init__(
         self,
         *,
-        entrypoint_path: Optional[Path] = None,
+        worker_script_path: Optional[Path] = None,
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
@@ -33,37 +32,41 @@ class BackendClient(QObject):
         self.frozen = bool(
             getattr(sys, "frozen", False)
         )
-        self.program_path = Path(
+        self.python_path = Path(
             sys.executable
         ).resolve()
 
         if self.frozen:
-            self.entrypoint_path = None
-            arguments = ["--backend-worker"]
-            self.worker_label = (
-                "{} --backend-worker".format(
-                    self.program_path
-                )
+            suffix = ".exe" if sys.platform == "win32" else ""
+            self.program_path = (
+                self.python_path.parent
+                / ("DateGPTWorker" + suffix)
+            ).resolve()
+            self.worker_script_path = None
+            arguments = []
+            self.worker_label = str(
+                self.program_path
             )
         else:
             path = (
-                Path(entrypoint_path)
-                if entrypoint_path is not None
-                else Path(__file__).resolve().parent
-                / "main.py"
+                Path(worker_script_path)
+                if worker_script_path is not None
+                else (
+                    Path(__file__).resolve().parent.parent
+                    / "BACKEND"
+                    / "backend.py"
+                )
             )
-            self.entrypoint_path = (
+            self.worker_script_path = (
                 path.expanduser().resolve()
             )
+            self.program_path = self.python_path
             arguments = [
-                str(self.entrypoint_path),
-                "--backend-worker",
+                str(self.worker_script_path),
             ]
-            self.worker_label = (
-                "{} {} --backend-worker".format(
-                    self.program_path,
-                    self.entrypoint_path,
-                )
+            self.worker_label = "{} {}".format(
+                self.program_path,
+                self.worker_script_path,
             )
 
         self.process = QProcess(self)
@@ -114,14 +117,21 @@ class BackendClient(QObject):
         self._expected_shutdown = False
         self._recent_stderr.clear()
 
+        if self.frozen:
+            required_path = self.program_path
+            label = "bundled backend worker"
+        else:
+            required_path = self.worker_script_path
+            label = "backend.py"
+
         if (
-            not self.frozen
-            and self.entrypoint_path is not None
-            and not self.entrypoint_path.exists()
+            required_path is None
+            or not required_path.exists()
         ):
             self.fatal_error.emit(
-                "desktop entrypoint를 찾을 수 없습니다: {}".format(
-                    self.entrypoint_path
+                "{}를 찾을 수 없습니다: {}".format(
+                    label,
+                    required_path,
                 )
             )
             return
