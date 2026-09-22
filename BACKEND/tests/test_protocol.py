@@ -185,7 +185,14 @@ def write_scenario(root: Path):
         "A001 | Test | assets/test.png\n",
         encoding="utf-8",
     )
+    (root / "assets" / "backgrounds.md").write_text(
+        "B001 | background | room | day | assets/bg.png\n",
+        encoding="utf-8",
+    )
     (root / "assets" / "test.png").write_bytes(
+        b"fake-png"
+    )
+    (root / "assets" / "bg.png").write_bytes(
         b"fake-png"
     )
 
@@ -305,6 +312,25 @@ class ProtocolTests(unittest.TestCase):
                 app.active_session.scenario.exists(
                     "assets/example.png"
                 )
+            )
+
+    def test_open_session_exposes_fallback_background(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, opened = self.make_open_app(base)
+
+            fallback = opened[0]["fallback_background"]
+            self.assertIsInstance(fallback, dict)
+            self.assertEqual(
+                fallback["id"],
+                "B001",
+            )
+            self.assertEqual(
+                fallback["kind"],
+                "background",
+            )
+            self.assertTrue(
+                Path(fallback["local_path"]).is_file()
             )
 
     def test_direct_setup_play_and_checkpoint(self):
