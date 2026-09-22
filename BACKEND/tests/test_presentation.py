@@ -93,6 +93,28 @@ class PresentationTests(unittest.TestCase):
             response.segments[1].assets,
             [],
         )
+        self.assertFalse(
+            response.segments[1].clear_characters
+        )
+
+    def test_clear_characters_is_preserved(self):
+        response = VNResponse.model_validate({
+            "segments": [
+                {
+                    "kind": "narration",
+                    "text": "두 사람은 복도를 떠났다.",
+                    "clear_characters": True,
+                }
+            ]
+        })
+        self.assertTrue(
+            response.segments[0].clear_characters
+        )
+        self.assertTrue(
+            response.public_segments()[0][
+                "clear_characters"
+            ]
+        )
 
     def test_non_dialogue_speaker_is_cleared(self):
         response = coerce_vn_response({
