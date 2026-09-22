@@ -523,6 +523,21 @@ class GamePage(QWidget):
         self._sync_input_shortcuts()
 
     def set_session(self, event: Dict[str, Any]) -> None:
+        if self._background_animation is not None:
+            self._background_animation.stop()
+            self._background_animation = None
+        for animation in list(
+            self._active_animations
+        ):
+            animation.stop()
+        self._active_animations.clear()
+
+        self.background_transition_label.clear()
+        self.background_transition_label.hide()
+        self.background_transition_effect.setOpacity(
+            0.0
+        )
+
         self._background_asset = None
         fallback = event.get(
             "fallback_background"
