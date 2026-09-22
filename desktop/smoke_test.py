@@ -23,6 +23,9 @@ def main() -> int:
         )
     )
     window = MainWindow(client)
+    window.resize(1200, 800)
+    window.show()
+    app.processEvents()
 
     crop_source = QImage(
         20,
@@ -102,6 +105,33 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+
+    stage_height_before_input = (
+        window.game.visual_area.height()
+    )
+    dialogue_rect = window.game.dialogue.geometry()
+    window.game.show_input()
+    app.processEvents()
+    if (
+        window.game.visual_area.height()
+        != stage_height_before_input
+    ):
+        print(
+            "input panel changed visual stage height",
+            file=sys.stderr,
+        )
+        return 1
+    if (
+        window.game.input_frame.geometry()
+        != dialogue_rect
+    ):
+        print(
+            "input and dialogue panels differ in size",
+            file=sys.stderr,
+        )
+        return 1
+    window.game.hide_input()
+    app.processEvents()
 
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
@@ -201,10 +231,21 @@ def main() -> int:
                 QStackedLayout,
             )
             or visual_stack.currentWidget()
-            is not window.game.character_layer
+            is not window.game.overlay_layer
+            or not (
+                visual_stack.indexOf(
+                    window.game.background_label
+                )
+                < visual_stack.indexOf(
+                    window.game.character_layer
+                )
+                < visual_stack.indexOf(
+                    window.game.overlay_layer
+                )
+            )
         ):
             print(
-                "character layer is not above background",
+                "VN visual/overlay layer order is invalid",
                 file=sys.stderr,
             )
             return 1
