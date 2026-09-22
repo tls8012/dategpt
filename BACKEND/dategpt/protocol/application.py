@@ -539,6 +539,11 @@ class BackendApplication:
                     asset_catalog,
                 ),
                 asset_count=len(asset_catalog),
+                fallback_background=(
+                    asset_catalog.first_resolved(
+                        kind="background"
+                    )
+                ),
                 turns=(
                     result.workspace.turns.list_turns()
                     if not result.needs_setup

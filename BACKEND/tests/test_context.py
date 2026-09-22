@@ -222,6 +222,66 @@ class ContextBuilderTests(unittest.TestCase):
             self.assertIn("PUBLIC INDEX", dynamic)
             self.assertIn("DRAFT CHARACTER", dynamic)
 
+    def test_gameplay_preloads_registered_asset_manifests(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            scenario_root = base / "scenario"
+            assets = scenario_root / "assets"
+            assets.mkdir(parents=True)
+
+            (scenario_root / "file-manifest.md").write_text(
+                "GAME_NAME: game\n"
+                "CONTENT_ROOT: game/distribution\n"
+                "asset_manifest: assets/index.md\n",
+                encoding="utf-8",
+            )
+            (assets / "index.md").write_text(
+                "# Asset Index\n"
+                "manifest: characters.md\n"
+                "manifest: backgrounds.md\n",
+                encoding="utf-8",
+            )
+            (assets / "characters.md").write_text(
+                "A005 | ChatGPT | female | logo | "
+                "uniform | neutral | raw/chatgpt.png\n",
+                encoding="utf-8",
+            )
+            (assets / "backgrounds.md").write_text(
+                "B001 | background | school_gate | "
+                "spring_cherry_blossom | raw/gate.png\n",
+                encoding="utf-8",
+            )
+
+            workspace = SessionWorkspace.open(
+                save_base=base / "games",
+                runtime_base=base / "runtime",
+                game_name="game",
+                game_id="id",
+            )
+            material = ContextBuilder(
+                scenario=ScenarioPack(scenario_root),
+                workspace=workspace,
+                init_complete=InitComplete(
+                    game_name="game",
+                    game_id="id",
+                ),
+            ).build_gameplay()
+
+            self.assertIn(
+                "REGISTERED VISUAL ASSETS",
+                material.stable_context,
+            )
+            self.assertIn("A005", material.stable_context)
+            self.assertIn("B001", material.stable_context)
+            self.assertIn(
+                "assets/characters.md",
+                material.stable_context,
+            )
+            self.assertIn(
+                "assets/backgrounds.md",
+                material.stable_context,
+            )
+
     def test_pointer_with_spaces_loads_exact_story(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)

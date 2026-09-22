@@ -20,6 +20,7 @@ def make_scenario(root: Path, game_name="테스트게임", content_root="content
         "# FILE MANIFEST\n\n"
         "- `GAME_NAME: {}`\n"
         "- `CONTENT_ROOT: {}`\n"
+        "- `start_story: story/start.md`\n"
         "- `control.gender: unspecified`\n".format(
             game_name,
             content_root,
@@ -33,6 +34,10 @@ def make_scenario(root: Path, game_name="테스트게임", content_root="content
     (root / "story").mkdir(exist_ok=True)
     (root / "story" / "welcome.md").write_text(
         "# WELCOME\nhello",
+        encoding="utf-8",
+    )
+    (root / "story" / "start.md").write_text(
+        "# START STORY\nopening",
         encoding="utf-8",
     )
 
@@ -288,6 +293,10 @@ class FoundationTests(unittest.TestCase):
                 "unspecified",
             )
             self.assertEqual(resumed.init_complete.current["location"], "station")
+            self.assertEqual(
+                resumed.init_complete.current["active_story"],
+                "story/start.md",
+            )
 
     def test_initializer_requires_choice_for_multiple_instances(self):
         with tempfile.TemporaryDirectory() as tmp:

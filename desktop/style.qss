@@ -16,18 +16,29 @@ QFrame#Stage {
     border-radius: 8px;
 }
 
-QFrame#DialogueCard {
-    background-color: rgba(18, 20, 24, 205);
-    border: 1px solid rgba(90, 98, 112, 190);
+QFrame#CharacterLayer,
+QFrame#OverlayLayer,
+QLabel#CharacterSprite,
+QLabel#BackgroundLayer {
+    background: transparent;
+    border: none;
+}
+
+QFrame#DialogueCard,
+QFrame#InputFrame {
+    background-color: rgba(18, 20, 24, 190);
+    border: 1px solid rgba(90, 98, 112, 175);
     border-radius: 10px;
 }
 
-QFrame#DialogueCard QLabel {
+QFrame#DialogueCard QLabel,
+QFrame#InputFrame QLabel {
     background: transparent;
 }
 
-QFrame#InputFrame {
-    background: transparent;
+QFrame#InputFrame QPlainTextEdit {
+    background-color: rgba(10, 12, 16, 150);
+    border: 1px solid rgba(90, 98, 112, 150);
 }
 
 QLabel#Title {

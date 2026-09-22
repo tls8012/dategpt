@@ -185,6 +185,15 @@ class SessionInitializer:
 
         extra_fields = dict(state.extra)
 
+        current_state = dict(current or {})
+        if (
+            result.manifest.start_story
+            and not current_state.get("active_story")
+        ):
+            current_state["active_story"] = (
+                result.manifest.start_story
+            )
+
         init_complete = InitComplete(
             game_name=result.game_name,
             game_id=result.game_id,
@@ -196,7 +205,7 @@ class SessionInitializer:
             language=state.language,
             dev_commands=state.dev_commands,
             paused=state.paused,
-            current=dict(current or {}),
+            current=current_state,
             extra_fields=extra_fields,
         )
         result.workspace.save.write_text(

@@ -29,6 +29,7 @@ class InstalledCartridge:
     format_version: str
     content_root: str
     path: Path
+    asset_count: int = 0
 
     def public_dict(self) -> dict:
         return {
@@ -36,6 +37,7 @@ class InstalledCartridge:
             "build_version": self.build_version,
             "format_version": self.format_version,
             "content_root": self.content_root,
+            "asset_count": self.asset_count,
         }
 
 
@@ -78,12 +80,27 @@ class CartridgeLibrary:
             "BUILD_VERSION",
         )
 
+        records = list(
+            iter_asset_records(distribution)
+        )
+        asset_count = sum(
+            1
+            for record in records
+            if resolve_authored_asset_path(
+                distribution,
+                manifest.content_root,
+                record.path,
+            )
+            is not None
+        )
+
         return InstalledCartridge(
             game_name=game_name,
             build_version=build_version,
             format_version=manifest.format_version,
             content_root=manifest.content_root,
             path=distribution,
+            asset_count=asset_count,
         )
 
     def install_directory(
@@ -110,6 +127,7 @@ class CartridgeLibrary:
                 format_version=existing.format_version,
                 content_root=existing.content_root,
                 path=target,
+                asset_count=existing.asset_count,
             )
 
         temp = target.parent / (
@@ -157,6 +175,7 @@ class CartridgeLibrary:
             format_version=inspected.format_version,
             content_root=inspected.content_root,
             path=target,
+            asset_count=copied.asset_count,
         )
 
     def resolve(
@@ -196,6 +215,7 @@ class CartridgeLibrary:
                 format_version=inspected.format_version,
                 content_root=inspected.content_root,
                 path=path,
+                asset_count=inspected.asset_count,
             )
 
         builds = [
@@ -220,6 +240,7 @@ class CartridgeLibrary:
             format_version=inspected.format_version,
             content_root=inspected.content_root,
             path=chosen,
+            asset_count=inspected.asset_count,
         )
 
     def list_installed(
@@ -260,6 +281,7 @@ class CartridgeLibrary:
                         format_version=inspected.format_version,
                         content_root=inspected.content_root,
                         path=build_root,
+                        asset_count=inspected.asset_count,
                     )
                 )
 
@@ -288,7 +310,11 @@ class CartridgeLibrary:
                 record.path,
             )
             if source_file is None:
-                continue
+                raise FileNotFoundError(
+                    "referenced asset not found: {}".format(
+                        record.path
+                    )
+                )
             if source_file.is_symlink():
                 raise ValueError(
                     "asset path resolves to symlink: {}".format(

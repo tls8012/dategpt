@@ -43,8 +43,13 @@ python -m pip install -r requirements.txt
 python desktop/main.py
 ```
 
-The desktop process starts `BACKEND/backend.py` with the same Python
-interpreter and communicates with it asynchronously through Qt `QProcess`.
+In source/development mode the desktop process starts a second copy of
+`desktop/main.py --backend-worker` under the same repository virtual
+environment and communicates with it asynchronously through Qt `QProcess`.
+Packaged builds contain a windowed `DateGPT` executable plus a dedicated
+`DateGPTWorker` executable for JSONL stdio. They share the same bundled Python
+runtime and dependencies, so end users do not need Python or a virtual
+environment.
 
 ## Repository layout
 
@@ -66,3 +71,28 @@ LLM call finishes and validates; partial structured token streaming is not used.
 
 See `desktop/README.md` for UI behavior and `BACKEND/PROTOCOL.md` for the
 JSONL protocol.
+
+
+## Packaged desktop builds
+
+DateGPT uses PyInstaller one-folder bundles. Packaged users do not install
+Python, PySide6, LangChain, or provider SDKs separately.
+
+Build locally:
+
+```bash
+python -m pip install -r requirements-build.txt
+python -m PyInstaller --noconfirm --clean packaging/DateGPT.spec
+```
+
+Outputs:
+
+- macOS: `dist/DateGPT.app`
+- Windows: `dist/DateGPT/DateGPT.exe`
+
+Packaged mutable data is stored outside the application bundle:
+
+- macOS: `~/Library/Application Support/DateGPT/`
+- Windows: `%APPDATA%\DateGPT\`
+
+Set `DATEGPT_HOME` to override that root for development/testing.

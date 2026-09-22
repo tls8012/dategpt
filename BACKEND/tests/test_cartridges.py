@@ -139,6 +139,37 @@ class CartridgeTests(unittest.TestCase):
                 mirrored.read_bytes(),
                 b"fake-png",
             )
+            self.assertEqual(
+                installed.asset_count,
+                1,
+            )
+
+    def test_install_rejects_missing_referenced_asset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            cartridge_root = base / "repo" / "datellm"
+            distribution = cartridge_root / "distribution"
+            write_datellm_distribution(distribution)
+
+            assets = distribution / "assets"
+            assets.mkdir()
+            (assets / "backgrounds.md").write_text(
+                "format: `ID | kind | location | variant | path`\n"
+                "B001 | background | classroom | day | "
+                "datellm/raw/assets/background/missing.png\n",
+                encoding="utf-8",
+            )
+
+            library = CartridgeLibrary(
+                base / "installed"
+            )
+            with self.assertRaisesRegex(
+                FileNotFoundError,
+                "referenced asset not found",
+            ):
+                library.install_directory(
+                    cartridge_root
+                )
 
     def test_datellm_character_manifest_without_bullets_parses(self):
         text = (

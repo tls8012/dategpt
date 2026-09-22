@@ -34,9 +34,21 @@ class VNLine(BaseModel):
     assets: List[str] = Field(
         default_factory=list,
         description=(
-            "Zero or more registered asset IDs to display with this unit. "
-            "Use only asset IDs explicitly available in the current game "
-            "context; never invent file paths or URLs."
+            "Registered asset IDs whose visual state changes at this unit. "
+            "Do not repeat an unchanged background or unchanged character "
+            "SCGs on every segment. A background ID replaces the current "
+            "background. One or more character IDs replace the current "
+            "visible character set. With no relevant IDs, keep the current "
+            "visual state. Use only IDs explicitly available in the current "
+            "game context; never invent file paths or URLs."
+        ),
+    )
+    clear_characters: bool = Field(
+        default=False,
+        description=(
+            "Set true only when all currently visible character SCGs should "
+            "leave the stage. Do not use it merely because this segment has "
+            "no character asset changes."
         ),
     )
 
@@ -69,6 +81,7 @@ class VNLine(BaseModel):
             "speaker": self.speaker,
             "text": self.text,
             "assets": list(self.assets),
+            "clear_characters": self.clear_characters,
         }
 
 

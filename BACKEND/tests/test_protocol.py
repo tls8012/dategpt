@@ -185,7 +185,14 @@ def write_scenario(root: Path):
         "A001 | Test | assets/test.png\n",
         encoding="utf-8",
     )
+    (root / "assets" / "backgrounds.md").write_text(
+        "B001 | background | room | day | assets/bg.png\n",
+        encoding="utf-8",
+    )
     (root / "assets" / "test.png").write_bytes(
+        b"fake-png"
+    )
+    (root / "assets" / "bg.png").write_bytes(
         b"fake-png"
     )
 
@@ -276,6 +283,10 @@ class ProtocolTests(unittest.TestCase):
                 installed[0]["cartridge"]["build_version"],
                 "1",
             )
+            self.assertEqual(
+                installed[0]["cartridge"]["asset_count"],
+                0,
+            )
 
             opened = app.handle({
                 "type": "open_session",
@@ -296,6 +307,43 @@ class ProtocolTests(unittest.TestCase):
                 opened[0]["build_version"],
                 "1",
             )
+            self.assertEqual(
+                opened[0]["asset_count"],
+                0,
+            )
+            self.assertIsNone(
+                opened[0]["fallback_background"]
+            )
+            self.assertEqual(
+                len(app.active_session.asset_catalog),
+                0,
+            )
+
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+            emitted = []
+            app.handle(
+                {
+                    "type": "play",
+                    "text": "no visual assets",
+                },
+                emit=emitted.append,
+            )
+            segment = [
+                item["segment"]
+                for item in emitted
+                if item["type"]
+                == "presentation_segment"
+            ][0]
+            self.assertEqual(
+                segment["resolved_assets"],
+                [],
+            )
+
             self.assertTrue(
                 app.active_session.scenario.exists(
                     "entities/characters/ChatGPT.md"
@@ -305,6 +353,25 @@ class ProtocolTests(unittest.TestCase):
                 app.active_session.scenario.exists(
                     "assets/example.png"
                 )
+            )
+
+    def test_open_session_exposes_fallback_background(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, opened = self.make_open_app(base)
+
+            fallback = opened[0]["fallback_background"]
+            self.assertIsInstance(fallback, dict)
+            self.assertEqual(
+                fallback["id"],
+                "B001",
+            )
+            self.assertEqual(
+                fallback["kind"],
+                "background",
+            )
+            self.assertTrue(
+                Path(fallback["local_path"]).is_file()
             )
 
     def test_direct_setup_play_and_checkpoint(self):

@@ -3,17 +3,34 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
 
-class BackendClient(QObject):
-    """Signal-driven JSONL transport for the existing DateGPT backend.
 
-    The desktop frontend deliberately keeps backend.py as a child process.
-    QProcess owns stdin/stdout/stderr integration, so no polling thread or
-    Python queue is required on the frontend side.
+def packaged_worker_path(
+    executable: Path,
+    *,
+    platform: str,
+) -> Path:
+    worker_name = (
+        "DateGPTWorker.exe"
+        if platform == "win32"
+        else "DateGPTWorker"
+    )
+    return (
+        Path(executable).expanduser().resolve().parent
+        / worker_name
+    ).resolve()
+
+
+class BackendClient(QObject):
+    """Signal-driven JSONL transport for the DateGPT backend worker.
+
+    Source mode launches BACKEND/backend.py under the current interpreter.
+    Frozen mode launches the bundled DateGPTWorker executable, so the GUI can
+    be a normal windowed application while the worker retains stdin/stdout.
     """
 
     event_received = Signal(object)
@@ -23,60 +40,138 @@ class BackendClient(QObject):
 
     def __init__(
         self,
-        backend_path: Path,
         *,
+        worker_script_path: Optional[Path] = None,
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
-        self.backend_path = Path(backend_path).expanduser().resolve()
+
+        self.frozen = bool(
+            getattr(sys, "frozen", False)
+        )
         self.python_path = Path(
             sys.executable
         ).resolve()
+
+        if self.frozen:
+            self.program_path = packaged_worker_path(
+                self.python_path,
+                platform=sys.platform,
+            )
+            self.worker_script_path = None
+            arguments = []
+            self.worker_label = str(
+                self.program_path
+            )
+        else:
+            path = (
+                Path(worker_script_path)
+                if worker_script_path is not None
+                else (
+                    Path(__file__).resolve().parent.parent
+                    / "BACKEND"
+                    / "backend.py"
+                )
+            )
+            self.worker_script_path = (
+                path.expanduser().resolve()
+            )
+            self.program_path = self.python_path
+            arguments = [
+                str(self.worker_script_path),
+            ]
+            self.worker_label = "{} {}".format(
+                self.program_path,
+                self.worker_script_path,
+            )
+
         self.process = QProcess(self)
-        self.process.setProgram(str(self.python_path))
-        self.process.setArguments([str(self.backend_path)])
+        self.process.setProgram(
+            str(self.program_path)
+        )
+        self.process.setArguments(arguments)
 
         self._stdout_buffer = ""
         self._stderr_buffer = ""
         self._request_counter = 0
+        self._backend_ready = False
+        self._expected_shutdown = False
+        self._recent_stderr: List[str] = []
 
         self.process.started.connect(self._on_started)
         self.process.finished.connect(self._on_finished)
-        self.process.errorOccurred.connect(self._on_process_error)
-        self.process.readyReadStandardOutput.connect(self._read_stdout)
-        self.process.readyReadStandardError.connect(self._read_stderr)
+        self.process.errorOccurred.connect(
+            self._on_process_error
+        )
+        self.process.readyReadStandardOutput.connect(
+            self._read_stdout
+        )
+        self.process.readyReadStandardError.connect(
+            self._read_stderr
+        )
 
     @property
     def is_running(self) -> bool:
-        return self.process.state() != QProcess.ProcessState.NotRunning
+        return (
+            self.process.state()
+            != QProcess.ProcessState.NotRunning
+        )
+
+    @property
+    def is_ready(self) -> bool:
+        return (
+            self._backend_ready
+            and self.process.state()
+            == QProcess.ProcessState.Running
+        )
 
     def start(self) -> None:
         if self.is_running:
             return
-        if not self.backend_path.exists():
+
+        self._backend_ready = False
+        self._expected_shutdown = False
+        self._recent_stderr.clear()
+
+        if self.frozen:
+            required_path = self.program_path
+            label = "bundled backend worker"
+        else:
+            required_path = self.worker_script_path
+            label = "backend.py"
+
+        if (
+            required_path is None
+            or not required_path.exists()
+        ):
             self.fatal_error.emit(
-                "backend.py를 찾을 수 없습니다: {}".format(
-                    self.backend_path
+                "{}를 찾을 수 없습니다: {}".format(
+                    label,
+                    required_path,
                 )
             )
             return
+
         self.debug_line.emit(
-            "START {} {}".format(
-                self.python_path,
-                self.backend_path,
+            "START {}".format(
+                self.worker_label
             )
         )
         self.process.start()
 
     def send(self, payload: Dict[str, Any]) -> str:
-        if not self.is_running:
-            raise RuntimeError("DateGPT backend is not running")
+        if not self.is_ready:
+            raise RuntimeError(
+                self._not_ready_message()
+            )
 
         message = dict(payload)
         request_id = message.get("request_id")
         if request_id is None:
             self._request_counter += 1
-            request_id = "qt-{}".format(self._request_counter)
+            request_id = "qt-{}".format(
+                self._request_counter
+            )
             message["request_id"] = request_id
 
         encoded = json.dumps(
@@ -92,25 +187,38 @@ class BackendClient(QObject):
                 )
             )
         )
-        self.process.write((encoded + "\n").encode("utf-8"))
+
+        written = self.process.write(
+            (encoded + "\n").encode("utf-8")
+        )
+        if written < 0:
+            raise RuntimeError(
+                "backend write failed\nWorker: {}{}".format(
+                    self.worker_label,
+                    self._stderr_suffix(),
+                )
+            )
         return str(request_id)
 
     def shutdown(self) -> None:
+        self._expected_shutdown = True
         if not self.is_running:
             return
+
         try:
-            self.send({"type": "shutdown"})
-            self.process.waitForFinished(500)
+            if self.is_ready:
+                self.send({"type": "shutdown"})
+                self.process.waitForFinished(700)
         except Exception:
             pass
+
         if self.is_running:
             self.process.terminate()
-            self.process.waitForFinished(300)
+            self.process.waitForFinished(500)
         if self.is_running:
             self.process.kill()
 
     def _on_started(self) -> None:
-        self.running_changed.emit(True)
         self.debug_line.emit(
             "PROCESS started pid={}".format(
                 self.process.processId()
@@ -122,7 +230,11 @@ class BackendClient(QObject):
         exit_code: int,
         exit_status: QProcess.ExitStatus,
     ) -> None:
-        self.running_changed.emit(False)
+        was_ready = self._backend_ready
+        self._backend_ready = False
+        if was_ready:
+            self.running_changed.emit(False)
+
         self.debug_line.emit(
             "PROCESS finished code={} status={}".format(
                 exit_code,
@@ -130,16 +242,32 @@ class BackendClient(QObject):
             )
         )
 
+        if self._expected_shutdown:
+            return
+
+        self.fatal_error.emit(
+            self._finished_message(
+                exit_code,
+                exit_status,
+            )
+        )
+
     def _on_process_error(
         self,
         error: QProcess.ProcessError,
     ) -> None:
-        message = "QProcess error {}: {}".format(
+        message = (
+            "QProcess error {}: {}\n"
+            "Worker: {}{}"
+        ).format(
             error.name,
             self.process.errorString(),
+            self.worker_label,
+            self._stderr_suffix(),
         )
         self.debug_line.emit(message)
-        self.fatal_error.emit(message)
+        if not self._expected_shutdown:
+            self.fatal_error.emit(message)
 
     def _read_stdout(self) -> None:
         chunk = bytes(
@@ -178,9 +306,13 @@ class BackendClient(QObject):
             event = json.loads(line)
         except json.JSONDecodeError as exc:
             self.fatal_error.emit(
-                "백엔드 stdout JSON 파싱 실패: {}".format(exc)
+                "백엔드 stdout JSON 파싱 실패: {}".format(
+                    exc
+                )
             )
-            self.debug_line.emit("BAD STDOUT " + line)
+            self.debug_line.emit(
+                "BAD STDOUT " + line
+            )
             return
 
         if not isinstance(event, dict):
@@ -200,19 +332,85 @@ class BackendClient(QObject):
         self.event_received.emit(event)
 
     def _handle_stderr_line(self, line: str) -> None:
-        self.debug_line.emit("ERR " + line)
+        self._recent_stderr.append(line)
+        if len(self._recent_stderr) > 20:
+            del self._recent_stderr[:-20]
+        self.debug_line.emit(
+            "ERR " + line
+        )
+
+        if (
+            not self._backend_ready
+            and line.startswith(
+                "[protocol] READY "
+            )
+        ):
+            self._backend_ready = True
+            self.running_changed.emit(True)
+
+    def _stderr_suffix(self) -> str:
+        if not self._recent_stderr:
+            return ""
+        return (
+            "\n\nBackend stderr:\n"
+            + "\n".join(
+                self._recent_stderr[-12:]
+            )
+        )
+
+    def _not_ready_message(self) -> str:
+        state = self.process.state()
+        if state == QProcess.ProcessState.Starting:
+            status = "backend worker is starting"
+        elif state == QProcess.ProcessState.Running:
+            status = (
+                "backend worker started but is not ready"
+            )
+        else:
+            status = "backend worker is not running"
+
+        return "{}\nWorker: {}{}".format(
+            status,
+            self.worker_label,
+            self._stderr_suffix(),
+        )
+
+    def _finished_message(
+        self,
+        exit_code: int,
+        exit_status: QProcess.ExitStatus,
+    ) -> str:
+        return (
+            "DateGPT backend worker exited before it was usable.\n"
+            "exit_code={} status={}\n"
+            "Worker: {}{}"
+        ).format(
+            exit_code,
+            exit_status.name,
+            self.worker_label,
+            self._stderr_suffix(),
+        )
 
 
-def _redact_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _redact_payload(
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
     safe = dict(payload)
     if "api_key" in safe:
         safe["api_key"] = "<redacted>"
+
     text = safe.get("text")
     if (
         isinstance(text, str)
         and text.lstrip().casefold().startswith(
-            ("!api_key", "!api키", "!apikey")
+            (
+                "!api_key",
+                "!api키",
+                "!apikey",
+            )
         )
     ):
-        safe["text"] = "<api-key command redacted>"
+        safe["text"] = (
+            "<api-key command redacted>"
+        )
     return safe
