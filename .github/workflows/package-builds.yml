@@ -24,9 +24,9 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -41,9 +41,13 @@ jobs:
         shell: bash
         run: |
           test -f ./dist/DateGPT.app/Contents/Resources/desktop/style.qss
+          set +e
           printf '{"type":"ping","request_id":"pkg-ping"}\n{"type":"shutdown","request_id":"pkg-stop"}\n' | ./dist/DateGPT.app/Contents/MacOS/DateGPTWorker > packaged-worker.out 2> packaged-worker.err
+          worker_exit=$?
+          set -e
           cat packaged-worker.err
           cat packaged-worker.out
+          test "$worker_exit" -eq 0
           grep -q 'pong' packaged-worker.out
           grep -q 'shutdown_complete' packaged-worker.out
 
@@ -59,8 +63,10 @@ jobs:
             throw "packaged desktop style.qss missing"
           }
           $inputLines | & .\dist\DateGPT\DateGPTWorker.exe 1> packaged-worker.out 2> packaged-worker.err
+          $workerExit = $LASTEXITCODE
           Get-Content packaged-worker.err
           Get-Content packaged-worker.out
+          if ($workerExit -ne 0) { throw "packaged backend worker exited with code $workerExit" }
           if (-not (Select-String -Path packaged-worker.out -Pattern 'pong' -Quiet)) { throw "packaged backend ping failed" }
           if (-not (Select-String -Path packaged-worker.out -Pattern 'shutdown_complete' -Quiet)) { throw "packaged backend shutdown failed" }
 
