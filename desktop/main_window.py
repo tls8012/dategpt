@@ -6,6 +6,7 @@ from typing import Any, Dict, Iterable, Optional
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDialog,
     QDockWidget,
@@ -1431,6 +1432,10 @@ class MainWindow(QMainWindow):
         )
 
     def install_cartridge(self) -> None:
+        self.raise_()
+        self.activateWindow()
+        QApplication.setActiveWindow(self)
+
         source, ok = QInputDialog.getText(
             self,
             "시나리오 설치",
