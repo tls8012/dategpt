@@ -8,6 +8,23 @@ from typing import Any, Dict, List, Optional
 from PySide6.QtCore import QObject, QProcess, Signal
 
 
+
+def packaged_worker_path(
+    executable: Path,
+    *,
+    platform: str,
+) -> Path:
+    worker_name = (
+        "DateGPTWorker.exe"
+        if platform == "win32"
+        else "DateGPTWorker"
+    )
+    return (
+        Path(executable).expanduser().resolve().parent
+        / worker_name
+    ).resolve()
+
+
 class BackendClient(QObject):
     """Signal-driven JSONL transport for the DateGPT backend worker.
 
@@ -37,11 +54,10 @@ class BackendClient(QObject):
         ).resolve()
 
         if self.frozen:
-            suffix = ".exe" if sys.platform == "win32" else ""
-            self.program_path = (
-                self.python_path.parent
-                / ("DateGPTWorker" + suffix)
-            ).resolve()
+            self.program_path = packaged_worker_path(
+                self.python_path,
+                platform=sys.platform,
+            )
             self.worker_script_path = None
             arguments = []
             self.worker_label = str(
