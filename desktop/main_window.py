@@ -1928,11 +1928,15 @@ class MainWindow(QMainWindow):
         if event_type == "cartridge_installed":
             cartridge = event.get("cartridge", {})
             self.launcher.set_status(
-                "설치 완료: {}".format(
+                "설치 완료: {} · assets {}".format(
                     cartridge.get(
                         "game_name",
                         "(unknown)",
-                    )
+                    ),
+                    cartridge.get(
+                        "asset_count",
+                        0,
+                    ),
                 )
             )
             self._finish_request(request_id)
