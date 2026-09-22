@@ -154,10 +154,22 @@ state immediately.
 `get_controls`, `set_control`, and `set_controls` are deterministic engine
 operations and do not call the LLM. `set_controls` accepts a controls object
 and is used by the desktop settings panel for language, initiative, and
-world_consistency. Scenario-specific controls are also supported as arbitrary
-string key/value pairs. A Distribution may provide their new-game defaults in
-file-manifest.md as `control.<key>: <default>`; the active value is persisted
-without that prefix in init완료.md and is included in every turn's controls.
+world_consistency. Scenario-specific controls are also supported as string key/value
+pairs. A Distribution may provide their new-game defaults in file-manifest.md
+as `control.<key>: <default>`; the active value is persisted without that
+prefix in init완료.md and is included in every turn's controls.
+
+A scenario can declare a finite choice set with
+`control.<key>.options: value1 | value2 | value3`. The desktop renders such
+controls as dropdowns and the backend rejects values outside the declared set.
+Controls without `.options` remain free-form text fields.
+
+Finite-choice controls are also eligible for deterministic SCG remapping. If a
+character asset manifest has a metadata column with the same name as a declared
+control, DateGPT keeps the other character metadata unchanged and resolves the
+matching option variant when available. No dedicated hot-swap flag or LLM call
+is required. Controls that have no matching asset metadata still work normally
+as runtime/LLM controls and do not alter the image.
 
 checkpoint runs the runtime semantic save command without appending that
 maintenance instruction to ordinary conversation history.
