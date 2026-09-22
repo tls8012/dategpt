@@ -34,9 +34,12 @@ class VNLine(BaseModel):
     assets: List[str] = Field(
         default_factory=list,
         description=(
-            "Zero or more registered asset IDs to display with this unit. "
-            "Use only asset IDs explicitly available in the current game "
-            "context; never invent file paths or URLs."
+            "Registered asset IDs to display with this unit. "
+            "Use a matching registered background at scene start or when "
+            "location/time changes, and matching registered SCGs for visible "
+            "named characters when available. Use only IDs explicitly "
+            "available in the current game context; never invent file paths "
+            "or URLs."
         ),
     )
 
