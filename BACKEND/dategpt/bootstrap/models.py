@@ -45,6 +45,8 @@ class ScenarioManifest:
     content_root: str
     build_version: str = "unversioned"
     format_version: str = "1"
+    start_story: str = ""
+    asset_manifest: str = ""
     control_defaults: Dict[str, str] = field(
         default_factory=dict
     )
@@ -78,6 +80,14 @@ class ScenarioManifest:
                 fields.get("FORMAT_VERSION", "").strip()
                 or "1"
             ),
+            start_story=fields.get(
+                "start_story",
+                "",
+            ).strip(),
+            asset_manifest=fields.get(
+                "asset_manifest",
+                "",
+            ).strip(),
             control_defaults=control_defaults,
         )
 
