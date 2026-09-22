@@ -67,6 +67,67 @@ class AssetCatalogTests(unittest.TestCase):
                 raw.resolve(),
             )
 
+    def test_character_head_mode_remaps_only_matching_variant(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            distribution = Path(tmp) / "distribution"
+            assets = distribution / "assets"
+            assets.mkdir(parents=True)
+
+            (assets / "characters.md").write_text(
+                "format: `ID | character | gender | head_mode | outfit | pose | path`\n"
+                "A001 | ChatGPT | female | human | uniform | neutral | female_human.png\n"
+                "A005 | ChatGPT | female | logo | uniform | neutral | female_logo.png\n"
+                "A009 | ChatGPT | male | human | uniform | neutral | male_human.png\n",
+                encoding="utf-8",
+            )
+            for name in (
+                "female_human.png",
+                "female_logo.png",
+                "male_human.png",
+            ):
+                (distribution / name).write_bytes(
+                    b"fake-png"
+                )
+
+            catalog = AssetCatalog(distribution)
+
+            human = catalog.resolve_ids(
+                ["A005"],
+                head_mode="human",
+            )[0]
+            self.assertEqual(human["id"], "A001")
+            self.assertEqual(
+                human["source_asset_id"],
+                "A005",
+            )
+            self.assertEqual(
+                human["metadata"]["gender"],
+                "female",
+            )
+
+            logo = catalog.resolve_ids(
+                ["A001"],
+                head_mode="logo",
+            )[0]
+            self.assertEqual(logo["id"], "A005")
+            self.assertEqual(
+                logo["metadata"]["gender"],
+                "female",
+            )
+
+            unchanged = catalog.resolve_ids(
+                ["A009"],
+                head_mode="logo",
+            )[0]
+            self.assertEqual(
+                unchanged["id"],
+                "A009",
+            )
+            self.assertEqual(
+                unchanged["metadata"]["gender"],
+                "male",
+            )
+
     def test_background_kind_and_metadata_are_preserved(self):
         with tempfile.TemporaryDirectory() as tmp:
             distribution = Path(tmp) / "distribution"
