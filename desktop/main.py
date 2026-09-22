@@ -137,10 +137,13 @@ def main() -> int:
     window.show()
     activate_application(window)
     QTimer.singleShot(
-        200,
+        100,
+        client.start,
+    )
+    QTimer.singleShot(
+        250,
         lambda: activate_application(window),
     )
-    client.start()
     return app.exec()
 
 
