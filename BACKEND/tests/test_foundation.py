@@ -21,7 +21,8 @@ def make_scenario(root: Path, game_name="테스트게임", content_root="content
         "- `GAME_NAME: {}`\n"
         "- `CONTENT_ROOT: {}`\n"
         "- `start_story: story/start.md`\n"
-        "- `control.gender: unspecified`\n".format(
+        "- `control.gender: unspecified`\n"
+        "- `control.gender.options: unspecified | female | male`\n".format(
             game_name,
             content_root,
         ),
@@ -148,6 +149,56 @@ class FoundationTests(unittest.TestCase):
             self.assertTrue((base / "games" / "테스트" / "abc123" / "init완료.md").exists())
             self.assertTrue((base / "runtime" / "테스트" / "abc123" / "scratchpad" / "current.md").exists())
             self.assertEqual(ws.history.tail(1)[0]["text"], "hello")
+
+    def test_scenario_control_options_are_restored_and_validated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            scenario_root = base / "scenario"
+            make_scenario(scenario_root)
+
+            initializer = SessionInitializer(
+                save_base=base / "games",
+                runtime_base=base / "runtime",
+            )
+            result = initializer.prepare(
+                ScenarioPack(scenario_root),
+            )
+
+            self.assertEqual(
+                result.manifest.control_options[
+                    "gender"
+                ],
+                (
+                    "unspecified",
+                    "female",
+                    "male",
+                ),
+            )
+            self.assertEqual(
+                result.controls.options["gender"],
+                (
+                    "unspecified",
+                    "female",
+                    "male",
+                ),
+            )
+
+            result.controls.set(
+                "gender",
+                "FEMALE",
+            )
+            self.assertEqual(
+                result.controls.extra["gender"],
+                "female",
+            )
+            with self.assertRaisesRegex(
+                ValueError,
+                "must be one of",
+            ):
+                result.controls.set(
+                    "gender",
+                    "robot",
+                )
 
     def test_control_router_handles_without_llm(self):
         state = ControlState()
