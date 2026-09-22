@@ -10,22 +10,10 @@ project_root = Path(SPECPATH).parent
 desktop_dir = project_root / "desktop"
 backend_dir = project_root / "BACKEND"
 
-datas = [
-    (
-        str(project_root / ".scaffolding"),
-        ".scaffolding",
-    ),
-    (
-        str(desktop_dir / "style.qss"),
-        "desktop",
-    ),
-]
-binaries = []
-hiddenimports = []
+provider_datas = []
+provider_binaries = []
+provider_hiddenimports = []
 
-# LangChain discovers provider integrations dynamically. Collect both
-# supported providers explicitly so packaged builds do not depend on imports
-# that happened to be visible during Analysis.
 for package_name in (
     "langchain_openai",
     "langchain_anthropic",
@@ -33,20 +21,25 @@ for package_name in (
     package_datas, package_binaries, package_hidden = (
         collect_all(package_name)
     )
-    datas += package_datas
-    binaries += package_binaries
-    hiddenimports += package_hidden
+    provider_datas += package_datas
+    provider_binaries += package_binaries
+    provider_hiddenimports += package_hidden
 
 
-a = Analysis(
+gui_a = Analysis(
     [str(desktop_dir / "main.py")],
     pathex=[
         str(desktop_dir),
         str(backend_dir),
     ],
-    binaries=binaries,
-    datas=datas,
-    hiddenimports=hiddenimports,
+    binaries=[],
+    datas=[
+        (
+            str(desktop_dir / "style.qss"),
+            "desktop",
+        ),
+    ],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -55,14 +48,58 @@ a = Analysis(
     optimize=0,
 )
 
-pyz = PYZ(a.pure)
+worker_a = Analysis(
+    [str(backend_dir / "backend.py")],
+    pathex=[
+        str(desktop_dir),
+        str(backend_dir),
+    ],
+    binaries=provider_binaries,
+    datas=[
+        (
+            str(project_root / ".scaffolding"),
+            ".scaffolding",
+        ),
+        *provider_datas,
+    ],
+    hiddenimports=provider_hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+    optimize=0,
+)
 
-exe = EXE(
-    pyz,
-    a.scripts,
+MERGE(
+    (gui_a, "main", "DateGPT"),
+    (worker_a, "backend", "DateGPTWorker"),
+)
+
+gui_pyz = PYZ(gui_a.pure)
+worker_pyz = PYZ(worker_a.pure)
+
+gui_exe = EXE(
+    gui_pyz,
+    gui_a.dependencies,
+    gui_a.scripts,
     [],
     exclude_binaries=True,
     name="DateGPT",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=False,
+)
+
+worker_exe = EXE(
+    worker_pyz,
+    worker_a.dependencies,
+    worker_a.scripts,
+    [],
+    exclude_binaries=True,
+    name="DateGPTWorker",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -76,9 +113,12 @@ exe = EXE(
 )
 
 coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
+    gui_exe,
+    worker_exe,
+    gui_a.binaries,
+    gui_a.datas,
+    worker_a.binaries,
+    worker_a.datas,
     strip=False,
     upx=False,
     name="DateGPT",
