@@ -67,14 +67,14 @@ class AssetCatalogTests(unittest.TestCase):
                 raw.resolve(),
             )
 
-    def test_character_head_mode_remaps_only_matching_variant(self):
+    def test_character_variant_remaps_declared_metadata_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             distribution = Path(tmp) / "distribution"
             assets = distribution / "assets"
             assets.mkdir(parents=True)
 
             (assets / "characters.md").write_text(
-                "format: `ID | character | gender | head_mode | outfit | pose | path`\n"
+                "format: `ID | character | gender | appearance | outfit | pose | path`\n"
                 "A001 | ChatGPT | female | human | uniform | neutral | female_human.png\n"
                 "A005 | ChatGPT | female | logo | uniform | neutral | female_logo.png\n"
                 "A009 | ChatGPT | male | human | uniform | neutral | male_human.png\n",
@@ -91,42 +91,45 @@ class AssetCatalogTests(unittest.TestCase):
 
             catalog = AssetCatalog(distribution)
 
-            human = catalog.resolve_ids(
+            remapped = catalog.resolve_ids(
                 ["A005"],
-                head_mode="human",
+                variant_overrides={
+                    "appearance": "human",
+                },
             )[0]
-            self.assertEqual(human["id"], "A001")
+            self.assertEqual(remapped["id"], "A001")
             self.assertEqual(
-                human["source_asset_id"],
+                remapped["source_asset_id"],
                 "A005",
             )
             self.assertEqual(
-                human["metadata"]["gender"],
+                remapped["metadata"]["gender"],
                 "female",
             )
 
-            logo = catalog.resolve_ids(
-                ["A001"],
-                head_mode="logo",
-            )[0]
-            self.assertEqual(logo["id"], "A005")
-            self.assertEqual(
-                logo["metadata"]["gender"],
-                "female",
-            )
-
-            unchanged = catalog.resolve_ids(
-                ["A009"],
-                head_mode="logo",
+            multi_axis = catalog.resolve_ids(
+                ["A005"],
+                variant_overrides={
+                    "appearance": "human",
+                    "gender": "male",
+                },
             )[0]
             self.assertEqual(
-                unchanged["id"],
+                multi_axis["id"],
                 "A009",
             )
+
+            unrelated = catalog.resolve_ids(
+                ["A005"],
+                variant_overrides={
+                    "route_mode": "classic",
+                },
+            )[0]
             self.assertEqual(
-                unchanged["metadata"]["gender"],
-                "male",
+                unrelated["id"],
+                "A005",
             )
+
 
     def test_background_kind_and_metadata_are_preserved(self):
         with tempfile.TemporaryDirectory() as tmp:
