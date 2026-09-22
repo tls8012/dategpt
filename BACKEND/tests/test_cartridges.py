@@ -97,6 +97,49 @@ class CartridgeTests(unittest.TestCase):
                 installed.path,
             )
 
+    def test_install_mirrors_raw_assets_referenced_by_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            cartridge_root = base / "repo" / "datellm"
+            distribution = cartridge_root / "distribution"
+            write_datellm_distribution(distribution)
+
+            assets = distribution / "assets"
+            assets.mkdir()
+            raw_relative = (
+                "datellm/raw/assets/characters/chatgpt/"
+                "female/logo/uniform_neutral.png"
+            )
+            (assets / "characters.md").write_text(
+                "A005 | ChatGPT | female | logo | uniform | "
+                "neutral | {}\n".format(raw_relative),
+                encoding="utf-8",
+            )
+
+            raw = (
+                base
+                / "repo"
+                / Path(raw_relative)
+            )
+            raw.parent.mkdir(parents=True)
+            raw.write_bytes(b"fake-png")
+
+            library = CartridgeLibrary(
+                base / "installed"
+            )
+            installed = library.install_directory(
+                cartridge_root
+            )
+
+            mirrored = installed.path / Path(
+                raw_relative
+            )
+            self.assertTrue(mirrored.is_file())
+            self.assertEqual(
+                mirrored.read_bytes(),
+                b"fake-png",
+            )
+
     def test_datellm_character_manifest_without_bullets_parses(self):
         text = (
             "ChatGPT | roles: 같은 반 학생, 연애 대상, LLM | "

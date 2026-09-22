@@ -55,6 +55,7 @@ backend virtual environment.
 - QProcess signal-based backend transport
 - sparse turn journal with rollback/edit/regenerate
 - structured narration/dialogue/system presentation with per-segment asset IDs
+- resolved transparent character SCG rendering (up to three assets per segment)
 - Space-based sentence paging
 - resume-time restoration of the latest conversation presentation
 - Help and Continue actions without typing commands
@@ -75,5 +76,5 @@ the structured response before its segments are shown.
 
 Not implemented yet:
 
-- cartridge asset/background rendering
+- dedicated background/event-CG layer and transitions
 - rich existing-character picker

@@ -45,6 +45,11 @@ class FakeRunner:
                 "kind": "narration",
                 "speaker": "",
                 "text": reply,
+                "assets": (
+                    ["A001"]
+                    if text == "show asset"
+                    else []
+                ),
             },
         )
         self.host.workspace.history.append(
@@ -174,6 +179,14 @@ def write_scenario(root: Path):
     (root / "entities" / "existing.md").write_text(
         "# Existing Character",
         encoding="utf-8",
+    )
+    (root / "assets").mkdir()
+    (root / "assets" / "characters.md").write_text(
+        "A001 | Test | assets/test.png\n",
+        encoding="utf-8",
+    )
+    (root / "assets" / "test.png").write_bytes(
+        b"fake-png"
     )
 
 
@@ -748,6 +761,47 @@ class ProtocolTests(unittest.TestCase):
             self.assertEqual(
                 reply[0]["segments"][0]["kind"],
                 "narration",
+            )
+
+    def test_presentation_resolves_asset_ids_to_local_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            app, _, _, _ = self.make_open_app(base)
+            app.handle({
+                "type": "setup_session",
+                "play_mode": "observer",
+                "player_character_mode": "none",
+                "main_character": "none",
+            })
+
+            emitted = []
+            app.handle(
+                {
+                    "type": "play",
+                    "text": "show asset",
+                },
+                emit=emitted.append,
+            )
+
+            segment = [
+                event
+                for event in emitted
+                if event["type"] == "presentation_segment"
+            ][0]["segment"]
+            self.assertEqual(
+                segment["assets"],
+                ["A001"],
+            )
+            self.assertEqual(
+                segment["resolved_assets"][0]["id"],
+                "A001",
+            )
+            self.assertTrue(
+                Path(
+                    segment["resolved_assets"][0][
+                        "local_path"
+                    ]
+                ).is_file()
             )
 
     def test_resume_exposes_recent_structured_history(self):

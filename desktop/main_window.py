@@ -4,7 +4,7 @@ import json
 from typing import Any, Dict, Iterable, Optional
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -260,6 +260,15 @@ class GamePage(QWidget):
         stage_layout.setContentsMargins(22, 22, 22, 18)
         stage_layout.setSpacing(12)
 
+        self.visual_area = QFrame()
+        self.visual_area.setObjectName("VisualArea")
+        self.visual_area.setMinimumHeight(280)
+        visual_layout = QHBoxLayout(
+            self.visual_area
+        )
+        visual_layout.setContentsMargins(0, 0, 0, 0)
+        visual_layout.setSpacing(8)
+
         self.stage_hint = QLabel(
             "배경 / 캐릭터 표시 영역"
         )
@@ -267,8 +276,25 @@ class GamePage(QWidget):
         self.stage_hint.setAlignment(
             Qt.AlignmentFlag.AlignCenter
         )
-        stage_layout.addWidget(
+        visual_layout.addWidget(
             self.stage_hint,
+            1,
+        )
+
+        self.character_labels = []
+        for _ in range(3):
+            label = QLabel("")
+            label.setAlignment(
+                Qt.AlignmentFlag.AlignHCenter
+                | Qt.AlignmentFlag.AlignBottom
+            )
+            label.setMinimumSize(1, 1)
+            label.hide()
+            visual_layout.addWidget(label, 1)
+            self.character_labels.append(label)
+
+        stage_layout.addWidget(
+            self.visual_area,
             1,
         )
 
@@ -497,6 +523,17 @@ class GamePage(QWidget):
                 for value in segment.get("assets", [])
                 if str(value).strip()
             ],
+            "resolved_assets": [
+                dict(value)
+                for value in segment.get(
+                    "resolved_assets",
+                    [],
+                )
+                if isinstance(value, dict)
+                and str(
+                    value.get("local_path", "")
+                ).strip()
+            ],
         }
         self._segments.append(item)
         if self._segment_index < 0:
@@ -634,7 +671,86 @@ class GamePage(QWidget):
         self.dialogue_text.setText(
             segment.get("text", "")
         )
+        self._render_assets(
+            segment.get(
+                "resolved_assets",
+                [],
+            )
+        )
         self._update_page_hint()
+
+    def _render_assets(self, assets) -> None:
+        records = [
+            value
+            for value in list(assets or [])[:3]
+            if isinstance(value, dict)
+        ]
+
+        self.stage_hint.setVisible(
+            not records
+        )
+        for index, label in enumerate(
+            self.character_labels
+        ):
+            if index >= len(records):
+                label.clear()
+                label.hide()
+                continue
+
+            local_path = str(
+                records[index].get(
+                    "local_path",
+                    "",
+                )
+            ).strip()
+            pixmap = QPixmap(local_path)
+            if pixmap.isNull():
+                label.clear()
+                label.hide()
+                continue
+
+            slot_width = max(
+                1,
+                self.visual_area.width()
+                // max(1, len(records)),
+            )
+            target_height = max(
+                1,
+                self.visual_area.height(),
+            )
+            scaled = pixmap.scaled(
+                slot_width,
+                target_height,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            label.setPixmap(scaled)
+            label.show()
+
+        any_visible = any(
+            label.pixmap() is not None
+            and not label.pixmap().isNull()
+            for label in self.character_labels
+        )
+        self.stage_hint.setVisible(
+            not any_visible
+        )
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if (
+            hasattr(self, "character_labels")
+            and 0 <= self._segment_index
+            < len(self._segments)
+        ):
+            self._render_assets(
+                self._segments[
+                    self._segment_index
+                ].get(
+                    "resolved_assets",
+                    [],
+                )
+            )
 
     def _update_page_hint(self) -> None:
         if not self._segments:
@@ -1330,6 +1446,7 @@ class MainWindow(QMainWindow):
             {
                 "type": "install_cartridge",
                 "source": source,
+                "replace": True,
             },
             "install_cartridge",
         )
