@@ -14,7 +14,7 @@ DateGPT already mounts the selected Distribution as a local read-only ScenarioPa
 Do not look for or recreate games/GAME_NAME/game_source.md.
 Do not use .scaffolding paths through gameplay file tools; runtime/onboarding policy is already injected.
 Scenario/content tool paths are relative to the mounted Distribution root, and Save tool paths are relative to the current GAME_ID Save root.
-When a REGISTERED VISUAL ASSETS block is present, actively use it: choose a matching background at scene start or location/time change, and choose matching SCGs for visible named characters when registered variants exist. If multiple authored staging choices are equally valid, prefer one that has an exact registered visual match instead of an equivalent unrepresented staging. Respect current engine controls such as gender/head_mode. Put only registered asset IDs in structured response assets; never put file paths there.
+When a REGISTERED VISUAL ASSETS block is present, use it as incremental visual state. Choose a background at scene start or when the background should change, and choose SCGs when the visible character set or a visible character's registered pose should change. Do not repeat unchanged background/SCG IDs on every segment; omitted visuals stay on screen. If every visible character leaves, set clear_characters=true. If multiple authored staging choices are equally valid, prefer one that has an exact registered visual match instead of an equivalent unrepresented staging. Respect current engine controls such as gender/head_mode. Put only registered asset IDs in structured response assets; never put file paths there.
 """
 
 
