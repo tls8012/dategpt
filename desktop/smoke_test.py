@@ -28,6 +28,7 @@ def main() -> int:
         base = Path(tmp)
         background = base / "background.png"
         character = base / "character.png"
+        character_two = base / "character_two.png"
 
         QImage(64, 36, QImage.Format.Format_RGB32).save(
             str(background)
@@ -37,6 +38,11 @@ def main() -> int:
             48,
             QImage.Format.Format_ARGB32,
         ).save(str(character))
+        QImage(
+            24,
+            48,
+            QImage.Format.Format_ARGB32,
+        ).save(str(character_two))
 
         window.game.set_session({
             "game_name": "smoke",
@@ -120,6 +126,81 @@ def main() -> int:
         ):
             print(
                 "character layer is not above background",
+                file=sys.stderr,
+            )
+            return 1
+
+        # One character is centered automatically.
+        window.game._layout_character_labels(
+            animate=False
+        )
+        first_rect = (
+            window.game.character_labels[0].geometry()
+        )
+        layer_center = (
+            window.game.character_layer.width() // 2
+        )
+        if abs(
+            first_rect.center().x()
+            - layer_center
+        ) > 2:
+            print(
+                "single SCG is not centered",
+                file=sys.stderr,
+            )
+            return 1
+
+        # Two characters become left/right slots. The existing
+        # character should have a move animation available.
+        window.game._render_assets(
+            [
+                {
+                    "id": "A001",
+                    "kind": "character",
+                    "local_path": str(character),
+                    "metadata": {
+                        "character": "One",
+                    },
+                },
+                {
+                    "id": "A002",
+                    "kind": "character",
+                    "local_path": str(character_two),
+                    "metadata": {
+                        "character": "Two",
+                    },
+                },
+            ],
+            animate=True,
+        )
+        if not window.game._active_animations:
+            print(
+                "SCG transition animation was not created",
+                file=sys.stderr,
+            )
+            return 1
+        window.game._layout_character_labels(
+            animate=False
+        )
+        visible_rects = [
+            label.geometry()
+            for index, label in enumerate(
+                window.game.character_labels
+            )
+            if window.game._character_label_assets[
+                index
+            ] is not None
+        ]
+        if (
+            len(visible_rects) != 2
+            or not (
+                visible_rects[0].center().x()
+                < layer_center
+                < visible_rects[1].center().x()
+            )
+        ):
+            print(
+                "two SCGs are not in left/right slots",
                 file=sys.stderr,
             )
             return 1
