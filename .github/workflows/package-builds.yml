@@ -41,6 +41,8 @@ jobs:
         shell: bash
         run: |
           test -f ./dist/DateGPT.app/Contents/Resources/desktop/style.qss
+          test "$(defaults read "$PWD/dist/DateGPT.app/Contents/Info" LSUIElement)" = "0"
+          test "$(defaults read "$PWD/dist/DateGPT.app/Contents/Info" LSBackgroundOnly)" = "0"
           set +e
           printf '{"type":"ping","request_id":"pkg-ping"}\n{"type":"shutdown","request_id":"pkg-stop"}\n' | ./dist/DateGPT.app/Contents/MacOS/DateGPTWorker > packaged-worker.out 2> packaged-worker.err
           worker_exit=$?
