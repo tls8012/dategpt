@@ -4,11 +4,13 @@ import json
 from typing import Any, Dict, Iterable, Optional
 
 from PySide6.QtCore import (
+    QEvent,
     QEasingCurve,
     QParallelAnimationGroup,
     QPropertyAnimation,
     QRect,
     QSequentialAnimationGroup,
+    QTimer,
     Qt,
     Signal,
 )
@@ -392,6 +394,11 @@ class GamePage(QWidget):
             self.overlay_layer
         )
 
+        self.visual_area.installEventFilter(self)
+        self.character_layer.installEventFilter(self)
+        self.overlay_layer.installEventFilter(self)
+        self._sync_visual_z_order()
+
         stage_layout.addWidget(
             self.visual_area,
             1,
@@ -584,6 +591,11 @@ class GamePage(QWidget):
                 1.0
             )
         self._render_background()
+        self._sync_visual_z_order()
+        QTimer.singleShot(
+            0,
+            self._refresh_visual_geometry,
+        )
 
         self.needs_setup = bool(
             event.get("needs_setup", False)
@@ -839,6 +851,7 @@ class GamePage(QWidget):
         if self._waiting or self.input_frame.isVisible():
             return
         self._layout_overlay_panels()
+        self._sync_visual_z_order()
         self.input_frame.show()
         self.input_frame.raise_()
         self.input_box.setFocus(
@@ -849,6 +862,7 @@ class GamePage(QWidget):
     def hide_input(self) -> None:
         if self.input_frame.isVisible():
             self.input_frame.hide()
+        self._sync_visual_z_order()
         self.dialogue.raise_()
         self.setFocus(
             Qt.FocusReason.OtherFocusReason
@@ -1581,6 +1595,58 @@ class GamePage(QWidget):
             max(1, self.character_layer.height()),
         )
 
+    def _sync_visual_z_order(self) -> None:
+        if not hasattr(self, "overlay_layer"):
+            return
+        self.background_label.lower()
+        self.background_transition_label.raise_()
+        self.character_layer.raise_()
+        self.overlay_layer.raise_()
+
+    def _refresh_visual_geometry(self) -> None:
+        if not hasattr(self, "visual_area"):
+            return
+
+        self._sync_visual_z_order()
+        self._layout_overlay_panels()
+        self._render_background()
+
+        if (
+            self.background_transition_label.isVisible()
+        ):
+            asset = self._effective_background_asset()
+            scaled = self._scaled_background_pixmap(
+                asset
+            )
+            if not scaled.isNull():
+                self.background_transition_label.setPixmap(
+                    scaled
+                )
+
+        self._layout_character_labels(
+            animate=False
+        )
+        self._update_stage_hint()
+
+    def eventFilter(self, watched, event) -> bool:
+        if (
+            event.type() == QEvent.Type.Resize
+            and watched
+            in {
+                self.visual_area,
+                self.character_layer,
+                self.overlay_layer,
+            }
+        ):
+            QTimer.singleShot(
+                0,
+                self._refresh_visual_geometry,
+            )
+        return super().eventFilter(
+            watched,
+            event,
+        )
+
     def _layout_overlay_panels(self) -> None:
         if not hasattr(self, "overlay_layer"):
             return
@@ -1633,35 +1699,10 @@ class GamePage(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        self._layout_overlay_panels()
-        if hasattr(self, "background_label"):
-            self._render_background()
-            transition = (
-                self.background_transition_label.pixmap()
-                if hasattr(
-                    self,
-                    "background_transition_label",
-                )
-                else None
-            )
-            if (
-                transition is not None
-                and not transition.isNull()
-                and self.background_transition_label.isVisible()
-            ):
-                asset = self._effective_background_asset()
-                scaled = self._scaled_background_pixmap(
-                    asset
-                )
-                if not scaled.isNull():
-                    self.background_transition_label.setPixmap(
-                        scaled
-                    )
-        if hasattr(self, "character_layer"):
-            self._layout_character_labels(
-                animate=False
-            )
-            self._update_stage_hint()
+        QTimer.singleShot(
+            0,
+            self._refresh_visual_geometry,
+        )
 
     def _update_page_hint(self) -> None:
         if not self._segments:
