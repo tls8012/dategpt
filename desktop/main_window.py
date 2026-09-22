@@ -590,7 +590,32 @@ class GamePage(QWidget):
         return bool(self._segments)
 
     def restore_history(self, records) -> bool:
-        for record in reversed(list(records or [])):
+        history = list(records or [])
+        for record in history:
+            if not isinstance(record, dict):
+                continue
+            segments = record.get("segments")
+            if not isinstance(segments, list):
+                continue
+            for segment in segments:
+                if not isinstance(segment, dict):
+                    continue
+                for asset in segment.get(
+                    "resolved_assets",
+                    [],
+                ):
+                    if (
+                        isinstance(asset, dict)
+                        and str(
+                            asset.get("kind", "")
+                        ).casefold()
+                        == "background"
+                    ):
+                        self._background_asset = dict(
+                            asset
+                        )
+
+        for record in reversed(history):
             if not isinstance(record, dict):
                 continue
             if str(record.get("role", "")) != "assistant":
