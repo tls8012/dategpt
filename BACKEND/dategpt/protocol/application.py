@@ -269,8 +269,10 @@ class BackendApplication:
                         assets=(
                             session.asset_catalog.resolve_ids(
                                 raw_asset_ids,
-                                head_mode=_head_mode(
-                                    session.host.controls
+                                variant_overrides=(
+                                    _visual_variant_overrides(
+                                        session.host.controls
+                                    )
                                 ),
                             )
                         ),
@@ -315,6 +317,11 @@ class BackendApplication:
                             "control_state",
                             request_id,
                             controls=control_response.controls,
+                            control_options=(
+                                _control_options(
+                                    control_router.state
+                                )
+                            ),
                         )
                     )
                 events.append(
@@ -551,6 +558,9 @@ class BackendApplication:
                 is_new=result.is_new,
                 needs_setup=result.needs_setup,
                 controls=result.controls.snapshot(),
+                control_options=_control_options(
+                    result.controls
+                ),
                 has_welcome=(
                     result.welcome_text is not None
                 ),
@@ -566,8 +576,10 @@ class BackendApplication:
                 recent_history=_resolve_history_assets(
                     result.workspace.history.tail(100),
                     asset_catalog,
-                    head_mode=_head_mode(
-                        result.controls
+                    variant_overrides=(
+                        _visual_variant_overrides(
+                            result.controls
+                        )
                     ),
                 ),
                 asset_count=len(asset_catalog),
@@ -643,6 +655,9 @@ class BackendApplication:
                 controls=(
                     session.host.controls.snapshot()
                 ),
+                control_options=_control_options(
+                    session.host.controls
+                ),
             )
         ]
 
@@ -690,8 +705,10 @@ class BackendApplication:
             request_id,
             result.segments,
             asset_catalog=session.asset_catalog,
-            head_mode=_head_mode(
-                session.host.controls
+            variant_overrides=(
+                _visual_variant_overrides(
+                    session.host.controls
+                )
             ),
         )
 
@@ -783,8 +800,10 @@ class BackendApplication:
             request_id,
             result.segments,
             asset_catalog=session.asset_catalog,
-            head_mode=_head_mode(
-                session.host.controls
+            variant_overrides=(
+                _visual_variant_overrides(
+                    session.host.controls
+                )
             ),
         )
 
@@ -870,8 +889,10 @@ class BackendApplication:
             request_id,
             result.segments,
             asset_catalog=session.asset_catalog,
-            head_mode=_head_mode(
-                session.host.controls
+            variant_overrides=(
+                _visual_variant_overrides(
+                    session.host.controls
+                )
             ),
         )
 
@@ -1114,8 +1135,10 @@ class BackendApplication:
             request_id,
             result.segments,
             asset_catalog=session.asset_catalog,
-            head_mode=_head_mode(
-                session.host.controls
+            variant_overrides=(
+                _visual_variant_overrides(
+                    session.host.controls
+                )
             ),
         )
 
@@ -1370,7 +1393,9 @@ def _emit_presentation(
     segments,
     *,
     asset_catalog: Optional[AssetCatalog] = None,
-    head_mode: str = "",
+    variant_overrides: Optional[
+        Mapping[str, str]
+    ] = None,
 ) -> None:
     if emit is None or not segments:
         return
@@ -1386,7 +1411,7 @@ def _emit_presentation(
         public_segment = _resolve_segment_assets(
             segment,
             asset_catalog,
-            head_mode=head_mode,
+            variant_overrides=variant_overrides,
         )
         emit(
             _event(
@@ -1409,7 +1434,9 @@ def _resolve_segment_assets(
     segment,
     asset_catalog: Optional[AssetCatalog],
     *,
-    head_mode: str = "",
+    variant_overrides: Optional[
+        Mapping[str, str]
+    ] = None,
 ) -> dict:
     public_segment = dict(segment)
     asset_ids = public_segment.get("assets", [])
@@ -1418,7 +1445,7 @@ def _resolve_segment_assets(
     public_segment["resolved_assets"] = (
         asset_catalog.resolve_ids(
             asset_ids,
-            head_mode=head_mode,
+            variant_overrides=variant_overrides,
         )
         if asset_catalog is not None
         else []
@@ -1430,7 +1457,9 @@ def _resolve_history_assets(
     records,
     asset_catalog: AssetCatalog,
     *,
-    head_mode: str = "",
+    variant_overrides: Optional[
+        Mapping[str, str]
+    ] = None,
 ):
     resolved_records = []
     for record in records:
@@ -1444,7 +1473,7 @@ def _resolve_history_assets(
                 _resolve_segment_assets(
                     segment,
                     asset_catalog,
-                    head_mode=head_mode,
+                    variant_overrides=variant_overrides,
                 )
                 if isinstance(segment, Mapping)
                 else segment
@@ -1454,15 +1483,24 @@ def _resolve_history_assets(
     return resolved_records
 
 
-def _head_mode(
+def _control_options(
     controls: ControlState,
-) -> str:
-    return str(
-        controls.extra.get(
-            "head_mode",
-            "",
-        )
-    ).strip()
+) -> Dict[str, List[str]]:
+    return {
+        name: list(options)
+        for name, options in controls.options.items()
+    }
+
+
+def _visual_variant_overrides(
+    controls: ControlState,
+) -> Dict[str, str]:
+    snapshot = controls.snapshot()
+    return {
+        name: str(snapshot.get(name, "")).strip()
+        for name in controls.options
+        if str(snapshot.get(name, "")).strip()
+    }
 
 
 def _event(
