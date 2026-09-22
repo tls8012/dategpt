@@ -16,6 +16,13 @@ QFrame#Stage {
     border-radius: 8px;
 }
 
+QFrame#CharacterLayer,
+QLabel#CharacterSprite,
+QLabel#BackgroundLayer {
+    background: transparent;
+    border: none;
+}
+
 QFrame#DialogueCard {
     background-color: rgba(18, 20, 24, 205);
     border: 1px solid rgba(90, 98, 112, 190);
