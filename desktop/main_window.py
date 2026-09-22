@@ -319,6 +319,9 @@ class GamePage(QWidget):
         visual_stack.addWidget(
             self.character_layer
         )
+        visual_stack.setCurrentWidget(
+            self.character_layer
+        )
 
         stage_layout.addWidget(
             self.visual_area,
