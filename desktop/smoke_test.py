@@ -172,6 +172,7 @@ def main() -> int:
                 "resolved_assets": [],
             },
         ])
+        app.processEvents()
         fallback_pixmap = (
             window.game.background_label.pixmap()
         )
@@ -206,6 +207,7 @@ def main() -> int:
             },
         ])
 
+        app.processEvents()
         background_pixmap = (
             window.game.background_label.pixmap()
         )
@@ -220,6 +222,45 @@ def main() -> int:
         ):
             print(
                 "visual layer smoke test failed",
+                file=sys.stderr,
+            )
+            return 1
+
+        visual_width = max(
+            1,
+            window.game.visual_area.width(),
+        )
+        visual_height = max(
+            1,
+            window.game.visual_area.height(),
+        )
+        if (
+            background_pixmap.width()
+            < visual_width
+            or background_pixmap.height()
+            < visual_height
+        ):
+            print(
+                "background pixmap is stale after stage resize",
+                file=sys.stderr,
+            )
+            return 1
+
+        overlay_width = max(
+            1,
+            window.game.overlay_layer.width(),
+        )
+        expected_panel_width = max(
+            1,
+            overlay_width
+            - window.game._panel_margin * 2,
+        )
+        if abs(
+            window.game.dialogue.width()
+            - expected_panel_width
+        ) > 2:
+            print(
+                "dialogue overlay kept stale width",
                 file=sys.stderr,
             )
             return 1
