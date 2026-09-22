@@ -232,6 +232,7 @@ class GamePage(QWidget):
         self._segment_index = -1
         self._presentation_complete = True
         self._background_asset = None
+        self._character_assets = []
 
         root = QVBoxLayout(self)
         root.setContentsMargins(22, 18, 22, 22)
@@ -482,8 +483,12 @@ class GamePage(QWidget):
 
     def set_session(self, event: Dict[str, Any]) -> None:
         self._background_asset = None
+        self._character_assets = []
         self.background_label.clear()
         self.background_label.hide()
+        for label in self.character_labels:
+            label.clear()
+            label.hide()
 
         self.needs_setup = bool(
             event.get("needs_setup", False)
@@ -567,6 +572,9 @@ class GamePage(QWidget):
                 for value in segment.get("assets", [])
                 if str(value).strip()
             ],
+            "clear_characters": bool(
+                segment.get("clear_characters", False)
+            ),
             "resolved_assets": [
                 dict(value)
                 for value in segment.get(
@@ -601,40 +609,54 @@ class GamePage(QWidget):
 
     def restore_history(self, records) -> bool:
         history = list(records or [])
-        for record in history:
-            if not isinstance(record, dict):
-                continue
-            segments = record.get("segments")
-            if not isinstance(segments, list):
-                continue
-            for segment in segments:
-                if not isinstance(segment, dict):
-                    continue
-                for asset in segment.get(
-                    "resolved_assets",
-                    [],
-                ):
-                    if (
-                        isinstance(asset, dict)
-                        and str(
-                            asset.get("kind", "")
-                        ).casefold()
-                        == "background"
-                    ):
-                        self._background_asset = dict(
-                            asset
-                        )
+        latest_index = -1
 
-        for record in reversed(history):
+        for index, record in enumerate(history):
             if not isinstance(record, dict):
                 continue
             if str(record.get("role", "")) != "assistant":
                 continue
             segments = record.get("segments")
             if isinstance(segments, list) and segments:
-                self.set_segments(segments)
-                return True
+                latest_index = index
 
+        self._background_asset = None
+        self._character_assets = []
+
+        if latest_index >= 0:
+            for record in history[:latest_index]:
+                if not isinstance(record, dict):
+                    continue
+                segments = record.get("segments")
+                if not isinstance(segments, list):
+                    continue
+                for segment in segments:
+                    if not isinstance(segment, dict):
+                        continue
+                    self._apply_visual_state(
+                        segment.get(
+                            "resolved_assets",
+                            [],
+                        ),
+                        clear_characters=bool(
+                            segment.get(
+                                "clear_characters",
+                                False,
+                            )
+                        ),
+                    )
+
+            latest = history[latest_index]
+            self.set_segments(
+                latest.get("segments", [])
+            )
+            return True
+
+        for record in reversed(history):
+            if not isinstance(record, dict):
+                continue
+            if str(record.get("role", "")) != "assistant":
+                continue
             text = str(record.get("text", "")).strip()
             if text:
                 self.show_reply(
@@ -643,6 +665,44 @@ class GamePage(QWidget):
                 )
                 return True
         return False
+
+    def _apply_visual_state(
+        self,
+        assets,
+        *,
+        clear_characters: bool = False,
+    ) -> None:
+        records = [
+            value
+            for value in list(assets or [])
+            if isinstance(value, dict)
+        ]
+        background = next(
+            (
+                value
+                for value in records
+                if str(
+                    value.get("kind", "")
+                ).casefold() == "background"
+            ),
+            None,
+        )
+        if background is not None:
+            self._background_asset = dict(
+                background
+            )
+
+        changed_characters = [
+            dict(value)
+            for value in records
+            if str(
+                value.get("kind", "")
+            ).casefold() == "character"
+        ][:3]
+        if clear_characters:
+            self._character_assets = []
+        elif changed_characters:
+            self._character_assets = changed_characters
 
     def advance_presentation(self) -> None:
         if self.input_frame.isVisible():
@@ -744,11 +804,22 @@ class GamePage(QWidget):
             segment.get(
                 "resolved_assets",
                 [],
-            )
+            ),
+            clear_characters=bool(
+                segment.get(
+                    "clear_characters",
+                    False,
+                )
+            ),
         )
         self._update_page_hint()
 
-    def _render_assets(self, assets) -> None:
+    def _render_assets(
+        self,
+        assets,
+        *,
+        clear_characters: bool = False,
+    ) -> None:
         records = [
             value
             for value in list(assets or [])
@@ -770,16 +841,24 @@ class GamePage(QWidget):
                 background
             )
 
-        characters = [
-            value
+        changed_characters = [
+            dict(value)
             for value in records
             if str(
                 value.get("kind", "")
             ).casefold() == "character"
         ][:3]
 
+        if clear_characters:
+            self._character_assets = []
+        elif changed_characters:
+            self._character_assets = changed_characters
+
         self._render_background()
 
+        characters = list(
+            self._character_assets
+        )
         for index, label in enumerate(
             self.character_labels
         ):
@@ -866,13 +945,20 @@ class GamePage(QWidget):
             and 0 <= self._segment_index
             < len(self._segments)
         ):
+            current_segment = self._segments[
+                self._segment_index
+            ]
             self._render_assets(
-                self._segments[
-                    self._segment_index
-                ].get(
+                current_segment.get(
                     "resolved_assets",
                     [],
-                )
+                ),
+                clear_characters=bool(
+                    current_segment.get(
+                        "clear_characters",
+                        False,
+                    )
+                ),
             )
 
     def _update_page_hint(self) -> None:
