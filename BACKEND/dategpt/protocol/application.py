@@ -248,6 +248,37 @@ class BackendApplication:
                     )
                 ]
 
+            if message_type == "resolve_visual_assets":
+                session = self._require_session()
+                raw_asset_ids = message.get(
+                    "asset_ids",
+                    [],
+                )
+                if not isinstance(
+                    raw_asset_ids,
+                    list,
+                ):
+                    raise ProtocolError(
+                        "INVALID_REQUEST",
+                        "asset_ids는 JSON array여야 합니다.",
+                    )
+                return [
+                    _event(
+                        "visual_assets_resolved",
+                        request_id,
+                        assets=(
+                            session.asset_catalog.resolve_ids(
+                                raw_asset_ids,
+                                variant_overrides=(
+                                    _visual_variant_overrides(
+                                        session.host.controls
+                                    )
+                                ),
+                            )
+                        ),
+                    )
+                ]
+
             model_response = (
                 self.model_router.try_handle_message(
                     message
@@ -286,6 +317,11 @@ class BackendApplication:
                             "control_state",
                             request_id,
                             controls=control_response.controls,
+                            control_options=(
+                                _control_options(
+                                    control_router.state
+                                )
+                            ),
                         )
                     )
                 events.append(
@@ -522,6 +558,9 @@ class BackendApplication:
                 is_new=result.is_new,
                 needs_setup=result.needs_setup,
                 controls=result.controls.snapshot(),
+                control_options=_control_options(
+                    result.controls
+                ),
                 has_welcome=(
                     result.welcome_text is not None
                 ),
@@ -537,6 +576,11 @@ class BackendApplication:
                 recent_history=_resolve_history_assets(
                     result.workspace.history.tail(100),
                     asset_catalog,
+                    variant_overrides=(
+                        _visual_variant_overrides(
+                            result.controls
+                        )
+                    ),
                 ),
                 asset_count=len(asset_catalog),
                 fallback_background=(
@@ -611,6 +655,9 @@ class BackendApplication:
                 controls=(
                     session.host.controls.snapshot()
                 ),
+                control_options=_control_options(
+                    session.host.controls
+                ),
             )
         ]
 
@@ -658,6 +705,11 @@ class BackendApplication:
             request_id,
             result.segments,
             asset_catalog=session.asset_catalog,
+            variant_overrides=(
+                _visual_variant_overrides(
+                    session.host.controls
+                )
+            ),
         )
 
         return [
@@ -748,6 +800,11 @@ class BackendApplication:
             request_id,
             result.segments,
             asset_catalog=session.asset_catalog,
+            variant_overrides=(
+                _visual_variant_overrides(
+                    session.host.controls
+                )
+            ),
         )
 
         return [
@@ -832,6 +889,11 @@ class BackendApplication:
             request_id,
             result.segments,
             asset_catalog=session.asset_catalog,
+            variant_overrides=(
+                _visual_variant_overrides(
+                    session.host.controls
+                )
+            ),
         )
 
         return [
@@ -1073,6 +1135,11 @@ class BackendApplication:
             request_id,
             result.segments,
             asset_catalog=session.asset_catalog,
+            variant_overrides=(
+                _visual_variant_overrides(
+                    session.host.controls
+                )
+            ),
         )
 
         return [
@@ -1119,6 +1186,9 @@ class BackendApplication:
             needs_setup=session.needs_setup,
             controls=(
                 session.host.controls.snapshot()
+            ),
+            control_options=_control_options(
+                session.host.controls
             ),
             onboarding=(
                 session.onboarding.public_state()
@@ -1326,6 +1396,9 @@ def _emit_presentation(
     segments,
     *,
     asset_catalog: Optional[AssetCatalog] = None,
+    variant_overrides: Optional[
+        Mapping[str, str]
+    ] = None,
 ) -> None:
     if emit is None or not segments:
         return
@@ -1341,6 +1414,7 @@ def _emit_presentation(
         public_segment = _resolve_segment_assets(
             segment,
             asset_catalog,
+            variant_overrides=variant_overrides,
         )
         emit(
             _event(
@@ -1362,13 +1436,20 @@ def _emit_presentation(
 def _resolve_segment_assets(
     segment,
     asset_catalog: Optional[AssetCatalog],
+    *,
+    variant_overrides: Optional[
+        Mapping[str, str]
+    ] = None,
 ) -> dict:
     public_segment = dict(segment)
     asset_ids = public_segment.get("assets", [])
     if not isinstance(asset_ids, list):
         asset_ids = []
     public_segment["resolved_assets"] = (
-        asset_catalog.resolve_ids(asset_ids)
+        asset_catalog.resolve_ids(
+            asset_ids,
+            variant_overrides=variant_overrides,
+        )
         if asset_catalog is not None
         else []
     )
@@ -1378,6 +1459,10 @@ def _resolve_segment_assets(
 def _resolve_history_assets(
     records,
     asset_catalog: AssetCatalog,
+    *,
+    variant_overrides: Optional[
+        Mapping[str, str]
+    ] = None,
 ):
     resolved_records = []
     for record in records:
@@ -1391,6 +1476,7 @@ def _resolve_history_assets(
                 _resolve_segment_assets(
                     segment,
                     asset_catalog,
+                    variant_overrides=variant_overrides,
                 )
                 if isinstance(segment, Mapping)
                 else segment
@@ -1398,6 +1484,26 @@ def _resolve_history_assets(
             ]
         resolved_records.append(item)
     return resolved_records
+
+
+def _control_options(
+    controls: ControlState,
+) -> Dict[str, List[str]]:
+    return {
+        name: list(options)
+        for name, options in controls.options.items()
+    }
+
+
+def _visual_variant_overrides(
+    controls: ControlState,
+) -> Dict[str, str]:
+    snapshot = controls.snapshot()
+    return {
+        name: str(snapshot.get(name, "")).strip()
+        for name in controls.options
+        if str(snapshot.get(name, "")).strip()
+    }
 
 
 def _event(

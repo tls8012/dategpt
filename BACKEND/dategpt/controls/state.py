@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, Mapping, Tuple
 
 
 _LEVELS = {"low", "medium", "high"}
@@ -43,10 +43,28 @@ class ControlState:
     dev_commands: bool = False
     paused: bool = False
     extra: Dict[str, str] = field(default_factory=dict)
+    options: Dict[str, Tuple[str, ...]] = field(
+        default_factory=dict
+    )
 
     @classmethod
-    def from_mapping(cls, values: Mapping[str, Any]) -> "ControlState":
-        state = cls()
+    def from_mapping(
+        cls,
+        values: Mapping[str, Any],
+        *,
+        options: Mapping[str, Tuple[str, ...]] | None = None,
+    ) -> "ControlState":
+        state = cls(
+            options={
+                str(name): tuple(
+                    str(item)
+                    for item in choices
+                )
+                for name, choices in dict(
+                    options or {}
+                ).items()
+            }
+        )
         for name, value in values.items():
             state.set(name, value)
         return state
@@ -77,7 +95,28 @@ class ControlState:
                 )
             )
 
-        self.extra[name] = str(value).strip()
+        text = str(value).strip()
+        declared = self.options.get(name, ())
+        if declared:
+            canonical = next(
+                (
+                    option
+                    for option in declared
+                    if option.casefold()
+                    == text.casefold()
+                ),
+                None,
+            )
+            if canonical is None:
+                raise ValueError(
+                    "{} must be one of: {}".format(
+                        name,
+                        ", ".join(declared),
+                    )
+                )
+            text = canonical
+
+        self.extra[name] = text
 
     def snapshot(self) -> Dict[str, Any]:
         values = {

@@ -67,6 +67,70 @@ class AssetCatalogTests(unittest.TestCase):
                 raw.resolve(),
             )
 
+    def test_character_variant_remaps_declared_metadata_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            distribution = Path(tmp) / "distribution"
+            assets = distribution / "assets"
+            assets.mkdir(parents=True)
+
+            (assets / "characters.md").write_text(
+                "format: `ID | character | gender | appearance | outfit | pose | path`\n"
+                "A001 | ChatGPT | female | human | uniform | neutral | female_human.png\n"
+                "A005 | ChatGPT | female | logo | uniform | neutral | female_logo.png\n"
+                "A009 | ChatGPT | male | human | uniform | neutral | male_human.png\n",
+                encoding="utf-8",
+            )
+            for name in (
+                "female_human.png",
+                "female_logo.png",
+                "male_human.png",
+            ):
+                (distribution / name).write_bytes(
+                    b"fake-png"
+                )
+
+            catalog = AssetCatalog(distribution)
+
+            remapped = catalog.resolve_ids(
+                ["A005"],
+                variant_overrides={
+                    "appearance": "human",
+                },
+            )[0]
+            self.assertEqual(remapped["id"], "A001")
+            self.assertEqual(
+                remapped["source_asset_id"],
+                "A005",
+            )
+            self.assertEqual(
+                remapped["metadata"]["gender"],
+                "female",
+            )
+
+            multi_axis = catalog.resolve_ids(
+                ["A005"],
+                variant_overrides={
+                    "appearance": "human",
+                    "gender": "male",
+                },
+            )[0]
+            self.assertEqual(
+                multi_axis["id"],
+                "A009",
+            )
+
+            unrelated = catalog.resolve_ids(
+                ["A005"],
+                variant_overrides={
+                    "route_mode": "classic",
+                },
+            )[0]
+            self.assertEqual(
+                unrelated["id"],
+                "A005",
+            )
+
+
     def test_background_kind_and_metadata_are_preserved(self):
         with tempfile.TemporaryDirectory() as tmp:
             distribution = Path(tmp) / "distribution"

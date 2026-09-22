@@ -283,7 +283,10 @@ class SessionInitializer:
         if workspace.has_runtime_controls():
             values.update(workspace.load_controls())
 
-        return ControlState.from_mapping(values)
+        return ControlState.from_mapping(
+            values,
+            options=manifest.control_options,
+        )
 
     @staticmethod
     def _read_optional(scenario: ScenarioPack, path: str) -> Optional[str]:

@@ -811,6 +811,32 @@ class GamePage(QWidget):
         elif changed_characters:
             self._character_assets = changed_characters
 
+    def current_character_asset_ids(self):
+        return [
+            self._asset_id(asset)
+            for asset in self._character_assets
+            if self._asset_id(asset)
+        ]
+
+    def apply_resolved_character_assets(
+        self,
+        assets,
+    ) -> None:
+        character_assets = [
+            dict(asset)
+            for asset in list(assets or [])
+            if isinstance(asset, dict)
+            and str(
+                asset.get("kind", "")
+            ).casefold() == "character"
+        ]
+        if not character_assets:
+            return
+        self._render_assets(
+            character_assets,
+            animate=True,
+        )
+
     def advance_presentation(self) -> None:
         if self.input_frame.isVisible():
             return
@@ -1951,7 +1977,11 @@ class SettingsDialog(QDialog):
         self.setMinimumWidth(560)
         self._snapshot: Dict[str, Any] = {}
         self._controls: Dict[str, Any] = {}
-        self._extra_edits: Dict[str, QLineEdit] = {}
+        self._control_options: Dict[
+            str,
+            list[str],
+        ] = {}
+        self._extra_inputs: Dict[str, QWidget] = {}
 
         root = QVBoxLayout(self)
         form = QFormLayout()
@@ -2083,10 +2113,22 @@ class SettingsDialog(QDialog):
     def apply_controls(
         self,
         controls: Dict[str, Any],
+        control_options: Optional[
+            Dict[str, Any]
+        ] = None,
     ) -> None:
         if not isinstance(controls, dict):
             return
         self._controls = dict(controls)
+        if isinstance(control_options, dict):
+            self._control_options = {
+                str(name): [
+                    str(value)
+                    for value in values
+                ]
+                for name, values in control_options.items()
+                if isinstance(values, list)
+            }
         self.language_edit.setText(
             str(controls.get("language", "한국어"))
         )
@@ -2111,7 +2153,7 @@ class SettingsDialog(QDialog):
 
         while self.extra_controls_form.rowCount():
             self.extra_controls_form.removeRow(0)
-        self._extra_edits = {}
+        self._extra_inputs = {}
 
         reserved = {
             "language",
@@ -2126,15 +2168,28 @@ class SettingsDialog(QDialog):
             if str(key) not in reserved
         }
         for name in sorted(extras):
-            edit = QLineEdit()
-            edit.setText(extras[name])
+            options = self._control_options.get(
+                name,
+                [],
+            )
+            if len(options) >= 2:
+                widget = QComboBox()
+                widget.addItems(options)
+                self._set_combo_value(
+                    widget,
+                    extras[name],
+                )
+            else:
+                widget = QLineEdit()
+                widget.setText(extras[name])
+
             self.extra_controls_form.addRow(
                 name,
-                edit,
+                widget,
             )
-            self._extra_edits[name] = edit
+            self._extra_inputs[name] = widget
 
-        has_extras = bool(self._extra_edits)
+        has_extras = bool(self._extra_inputs)
         self.extra_controls_label.setVisible(
             has_extras
         )
@@ -2198,8 +2253,15 @@ class SettingsDialog(QDialog):
                 self.consistency_combo.currentText()
             ),
         }
-        for name, edit in self._extra_edits.items():
-            values[name] = edit.text().strip()
+        for name, widget in self._extra_inputs.items():
+            if isinstance(widget, QComboBox):
+                values[name] = (
+                    widget.currentText().strip()
+                )
+            elif isinstance(widget, QLineEdit):
+                values[name] = (
+                    widget.text().strip()
+                )
 
         self.controls_requested.emit(values)
 
@@ -2783,7 +2845,11 @@ class MainWindow(QMainWindow):
             self.active_session = dict(event)
             self.game.set_session(event)
             self.settings_dialog.apply_controls(
-                event.get("controls", {})
+                event.get("controls", {}),
+                event.get(
+                    "control_options",
+                    {},
+                ),
             )
             self.turn_history_dialog.set_turns(
                 event.get("turns", [])
@@ -2824,6 +2890,16 @@ class MainWindow(QMainWindow):
         if event_type == "session_setup_complete":
             self.active_session.update(event)
             self.active_session["needs_setup"] = False
+            self.settings_dialog.apply_controls(
+                event.get("controls", {}),
+                event.get(
+                    "control_options",
+                    self.active_session.get(
+                        "control_options",
+                        {},
+                    ),
+                ),
+            )
             self.game.mark_setup_complete()
             self.game.set_waiting(False)
             self.game.show_reply(
@@ -2844,13 +2920,85 @@ class MainWindow(QMainWindow):
         if event_type == "control_state":
             controls = event.get("controls", {})
             if isinstance(controls, dict):
+                previous_controls = (
+                    dict(
+                        self.active_session.get(
+                            "controls",
+                            {},
+                        )
+                    )
+                    if self.active_session
+                    else {}
+                )
+                control_options = event.get(
+                    "control_options",
+                    (
+                        self.active_session.get(
+                            "control_options",
+                            {},
+                        )
+                        if self.active_session
+                        else {}
+                    ),
+                )
+                if not isinstance(
+                    control_options,
+                    dict,
+                ):
+                    control_options = {}
+
                 self.settings_dialog.apply_controls(
-                    controls
+                    controls,
+                    control_options,
                 )
                 if self.active_session:
                     self.active_session["controls"] = (
                         dict(controls)
                     )
+                    self.active_session[
+                        "control_options"
+                    ] = dict(control_options)
+
+                changed_enum_controls = [
+                    name
+                    for name in control_options
+                    if str(
+                        previous_controls.get(
+                            name,
+                            "",
+                        )
+                    )
+                    != str(
+                        controls.get(
+                            name,
+                            "",
+                        )
+                    )
+                ]
+                if (
+                    self.active_session
+                    and changed_enum_controls
+                ):
+                    asset_ids = (
+                        self.game.current_character_asset_ids()
+                    )
+                    if asset_ids:
+                        self._send(
+                            {
+                                "type": (
+                                    "resolve_visual_assets"
+                                ),
+                                "asset_ids": asset_ids,
+                            },
+                            "visual_assets_resolve",
+                        )
+            return
+
+        if event_type == "visual_assets_resolved":
+            self.game.apply_resolved_character_assets(
+                event.get("assets", [])
+            )
+            self._finish_request(request_id)
             return
 
         if event_type == "presentation_start":

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, Tuple
 
 from .markdown import parse_markdown_fields
 
@@ -50,6 +50,9 @@ class ScenarioManifest:
     control_defaults: Dict[str, str] = field(
         default_factory=dict
     )
+    control_options: Dict[str, Tuple[str, ...]] = field(
+        default_factory=dict
+    )
 
     @classmethod
     def parse(cls, text: str) -> "ScenarioManifest":
@@ -61,13 +64,59 @@ class ScenarioManifest:
         if not content_root:
             raise ValueError("file-manifest.md is missing CONTENT_ROOT")
         control_defaults = {}
+        control_options = {}
+        option_suffix = ".options"
+
+        for key, value in fields.items():
+            if (
+                not key.startswith("control.")
+                or not key.endswith(option_suffix)
+            ):
+                continue
+
+            name = key[
+                len("control.") : -len(option_suffix)
+            ].strip()
+            if (
+                not name
+                or name in _RESERVED_CONTROL_NAMES
+            ):
+                continue
+
+            raw_options = str(value).strip()
+            separator = (
+                "|"
+                if "|" in raw_options
+                else ","
+            )
+            options = tuple(
+                dict.fromkeys(
+                    item.strip()
+                    for item in raw_options.split(separator)
+                    if item.strip()
+                )
+            )
+            if options:
+                control_options[name] = options
+
         for key, value in fields.items():
             if not key.startswith("control."):
+                continue
+            if key.endswith(option_suffix):
                 continue
             name = key[len("control."):].strip()
             if not name or name in _RESERVED_CONTROL_NAMES:
                 continue
             control_defaults[name] = str(value).strip()
+
+        for name, options in control_options.items():
+            default = control_defaults.get(name, "")
+            if default and default not in options:
+                raise ValueError(
+                    "control.{} default is not in declared options".format(
+                        name
+                    )
+                )
 
         return cls(
             game_name=game_name,
@@ -89,6 +138,7 @@ class ScenarioManifest:
                 "",
             ).strip(),
             control_defaults=control_defaults,
+            control_options=control_options,
         )
 
 

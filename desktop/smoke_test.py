@@ -6,7 +6,12 @@ from pathlib import Path
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QColor, QImage, QPixmap
-from PySide6.QtWidgets import QApplication, QStackedLayout
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QLineEdit,
+    QStackedLayout,
+)
 
 from backend_client import BackendClient
 from main_window import MainWindow
@@ -26,6 +31,92 @@ def main() -> int:
     window.resize(1200, 800)
     window.show()
     app.processEvents()
+
+    window.settings_dialog.apply_controls(
+        {
+            "language": "한국어",
+            "initiative": "medium",
+            "world_consistency": "medium",
+            "gender": "female",
+            "freeform": "anything",
+        },
+        {
+            "gender": ["female", "male"],
+        },
+    )
+    if not isinstance(
+        window.settings_dialog._extra_inputs[
+            "gender"
+        ],
+        QComboBox,
+    ):
+        print(
+            "finite-choice control is not a dropdown",
+            file=sys.stderr,
+        )
+        return 1
+    if not isinstance(
+        window.settings_dialog._extra_inputs[
+            "freeform"
+        ],
+        QLineEdit,
+    ):
+        print(
+            "freeform control unexpectedly became dropdown",
+            file=sys.stderr,
+        )
+        return 1
+
+    sent_requests = []
+    original_send = window._send
+    window._send = (
+        lambda payload, kind: sent_requests.append(
+            (dict(payload), kind)
+        )
+    )
+    window.active_session = {
+        "controls": {
+            "appearance": "logo",
+        },
+        "control_options": {
+            "appearance": ["logo", "human"],
+        },
+    }
+    window.game._character_assets = [
+        {
+            "id": "A001",
+            "kind": "character",
+            "metadata": {
+                "character": "Test",
+                "appearance": "logo",
+            },
+        }
+    ]
+    window._handle_event({
+        "type": "control_state",
+        "controls": {
+            "appearance": "human",
+        },
+        "control_options": {
+            "appearance": ["logo", "human"],
+        },
+    })
+    if (
+        not sent_requests
+        or sent_requests[-1][0].get("type")
+        != "resolve_visual_assets"
+        or sent_requests[-1][0].get(
+            "asset_ids"
+        )
+        != ["A001"]
+    ):
+        print(
+            "enum control change did not request SCG re-resolution",
+            file=sys.stderr,
+        )
+        return 1
+    window._send = original_send
+    window.active_session = {}
 
     crop_source = QImage(
         20,
@@ -362,6 +453,49 @@ def main() -> int:
         ):
             print(
                 "two SCGs are not in left/right slots",
+                file=sys.stderr,
+            )
+            return 1
+
+        before_hot_swap_count = len(
+            window.game._character_assets
+        )
+        window.game.apply_resolved_character_assets(
+            [
+                {
+                    "id": "A101",
+                    "kind": "character",
+                    "local_path": str(character),
+                    "metadata": {
+                        "character": "One",
+                        "gender": "female",
+                        "head_mode": "human",
+                        "outfit": "uniform",
+                        "pose": "neutral",
+                    },
+                },
+                {
+                    "id": "A102",
+                    "kind": "character",
+                    "local_path": str(character_two),
+                    "metadata": {
+                        "character": "Two",
+                        "gender": "female",
+                        "head_mode": "human",
+                        "outfit": "uniform",
+                        "pose": "neutral",
+                    },
+                },
+            ]
+        )
+        if (
+            len(window.game._character_assets)
+            != before_hot_swap_count
+            or window.game.current_character_asset_ids()
+            != ["A101", "A102"]
+        ):
+            print(
+                "head-mode SCG hot swap changed visual set",
                 file=sys.stderr,
             )
             return 1

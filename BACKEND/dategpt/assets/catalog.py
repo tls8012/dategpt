@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Dict, Iterable, Iterator, List, Optional
+from typing import Dict, Iterable, Iterator, List, Mapping, Optional
 
 
 _IMAGE_SUFFIXES = {
@@ -268,6 +268,85 @@ class AssetCatalog:
             local_path=local_path,
         )
 
+    def resolve_character_variant(
+        self,
+        asset_id: str,
+        *,
+        variant_overrides: Optional[
+            Mapping[str, str]
+        ] = None,
+    ) -> Optional[dict]:
+        record = self.records.get(
+            str(asset_id).strip()
+        )
+        if (
+            record is None
+            or record.kind.casefold() != "character"
+        ):
+            return self.resolve(asset_id)
+
+        source_metadata = {
+            str(key).casefold(): str(value).strip()
+            for key, value in record.metadata.items()
+        }
+        overrides = {
+            str(key).casefold(): str(value).strip()
+            for key, value in dict(
+                variant_overrides or {}
+            ).items()
+            if str(value).strip()
+            and str(key).casefold()
+            in source_metadata
+        }
+        if not overrides:
+            return self.resolve(asset_id)
+
+        if all(
+            source_metadata.get(key, "").casefold()
+            == value.casefold()
+            for key, value in overrides.items()
+        ):
+            return self.resolve(asset_id)
+
+        for candidate in self.records.values():
+            if candidate.kind.casefold() != "character":
+                continue
+
+            candidate_metadata = {
+                str(key).casefold(): str(value).strip()
+                for key, value in candidate.metadata.items()
+            }
+
+            if any(
+                candidate_metadata.get(
+                    key,
+                    "",
+                ).casefold()
+                != target.casefold()
+                for key, target in overrides.items()
+            ):
+                continue
+
+            comparable_keys = (
+                set(source_metadata)
+                | set(candidate_metadata)
+            ) - set(overrides)
+            if all(
+                source_metadata.get(key, "").casefold()
+                == candidate_metadata.get(key, "").casefold()
+                for key in comparable_keys
+            ):
+                resolved = self.resolve(
+                    candidate.asset_id
+                )
+                if resolved is not None:
+                    resolved["source_asset_id"] = (
+                        record.asset_id
+                    )
+                    return resolved
+
+        return self.resolve(asset_id)
+
     def first_resolved(
         self,
         *,
@@ -287,6 +366,9 @@ class AssetCatalog:
         asset_ids: Iterable[str],
         *,
         character_limit: int = 3,
+        variant_overrides: Optional[
+            Mapping[str, str]
+        ] = None,
     ) -> List[dict]:
         resolved = []
         seen = set()
@@ -299,7 +381,20 @@ class AssetCatalog:
                 continue
             seen.add(asset_id)
 
-            record = self.resolve(asset_id)
+            source_record = self.records.get(
+                asset_id
+            )
+            if (
+                source_record is not None
+                and source_record.kind.casefold()
+                == "character"
+            ):
+                record = self.resolve_character_variant(
+                    asset_id,
+                    variant_overrides=variant_overrides,
+                )
+            else:
+                record = self.resolve(asset_id)
             if record is None:
                 continue
 
