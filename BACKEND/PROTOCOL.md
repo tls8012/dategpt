@@ -135,8 +135,14 @@ reply
 ```
 
 Each `presentation_segment` is already a frontend display unit, normally one
-complete sentence, and may select multiple registered assets. The final `reply`
-still includes both flattened `text` and `segments` for compatibility.
+complete sentence, and may select multiple registered assets. The backend also
+adds `resolved_assets` for IDs that resolve to existing local image files.
+Each resolved record contains the authored ID/path and a runtime-only
+`local_path` for the desktop client. Absolute local paths are never written
+back into cartridge manifests or Save data. Unknown/missing IDs are ignored
+without failing the text turn.
+
+The final `reply` still includes both flattened `text` and `segments` for compatibility.
 Presentation events are emitted only after the single LLM call has completed
 and the structured response has been validated; DateGPT does not stream partial
 structured output.
@@ -182,6 +188,13 @@ Installed layout:
 ```text
 user_data/cartridges/GAME_NAME/BUILD_VERSION/
 ```
+
+Asset manifests may keep author/source paths such as
+`datellm/raw/assets/characters/...`. During installation DateGPT uses
+`CONTENT_ROOT` to infer the source repository root, resolves those authored
+paths there, and mirrors only referenced image files into the installed
+cartridge under the same authored path. This keeps web/build manifests
+unchanged while making the local desktop cartridge self-contained.
 
 `assets/` and image files are optional. The installer requires only a valid
 `file-manifest.md`; format version 1 is currently supported. Symlinks are
