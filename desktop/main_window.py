@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QStackedLayout,
     QStackedWidget,
     QStatusBar,
     QTextEdit,
@@ -229,6 +230,7 @@ class GamePage(QWidget):
         self._segments = []
         self._segment_index = -1
         self._presentation_complete = True
+        self._background_asset = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(22, 18, 22, 22)
@@ -264,11 +266,31 @@ class GamePage(QWidget):
         self.visual_area = QFrame()
         self.visual_area.setObjectName("VisualArea")
         self.visual_area.setMinimumHeight(280)
-        visual_layout = QHBoxLayout(
+
+        visual_stack = QStackedLayout(
             self.visual_area
         )
-        visual_layout.setContentsMargins(0, 0, 0, 0)
-        visual_layout.setSpacing(8)
+        visual_stack.setContentsMargins(0, 0, 0, 0)
+        visual_stack.setStackingMode(
+            QStackedLayout.StackingMode.StackAll
+        )
+
+        self.background_label = QLabel("")
+        self.background_label.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+        self.background_label.setMinimumSize(1, 1)
+        self.background_label.hide()
+        visual_stack.addWidget(
+            self.background_label
+        )
+
+        self.character_layer = QFrame()
+        character_layout = QHBoxLayout(
+            self.character_layer
+        )
+        character_layout.setContentsMargins(0, 0, 0, 0)
+        character_layout.setSpacing(8)
 
         self.stage_hint = QLabel(
             "배경 / 캐릭터 표시 영역"
@@ -277,7 +299,7 @@ class GamePage(QWidget):
         self.stage_hint.setAlignment(
             Qt.AlignmentFlag.AlignCenter
         )
-        visual_layout.addWidget(
+        character_layout.addWidget(
             self.stage_hint,
             1,
         )
@@ -291,8 +313,12 @@ class GamePage(QWidget):
             )
             label.setMinimumSize(1, 1)
             label.hide()
-            visual_layout.addWidget(label, 1)
+            character_layout.addWidget(label, 1)
             self.character_labels.append(label)
+
+        visual_stack.addWidget(
+            self.character_layer
+        )
 
         stage_layout.addWidget(
             self.visual_area,
@@ -442,6 +468,10 @@ class GamePage(QWidget):
         self._sync_input_shortcuts()
 
     def set_session(self, event: Dict[str, Any]) -> None:
+        self._background_asset = None
+        self.background_label.clear()
+        self.background_label.hide()
+
         self.needs_setup = bool(
             event.get("needs_setup", False)
         )
@@ -683,23 +713,45 @@ class GamePage(QWidget):
     def _render_assets(self, assets) -> None:
         records = [
             value
-            for value in list(assets or [])[:3]
+            for value in list(assets or [])
             if isinstance(value, dict)
         ]
 
-        self.stage_hint.setVisible(
-            not records
+        background = next(
+            (
+                value
+                for value in records
+                if str(
+                    value.get("kind", "")
+                ).casefold() == "background"
+            ),
+            None,
         )
+        if background is not None:
+            self._background_asset = dict(
+                background
+            )
+
+        characters = [
+            value
+            for value in records
+            if str(
+                value.get("kind", "")
+            ).casefold() == "character"
+        ][:3]
+
+        self._render_background()
+
         for index, label in enumerate(
             self.character_labels
         ):
-            if index >= len(records):
+            if index >= len(characters):
                 label.clear()
                 label.hide()
                 continue
 
             local_path = str(
-                records[index].get(
+                characters[index].get(
                     "local_path",
                     "",
                 )
@@ -713,7 +765,7 @@ class GamePage(QWidget):
             slot_width = max(
                 1,
                 self.visual_area.width()
-                // max(1, len(records)),
+                // max(1, len(characters)),
             )
             target_height = max(
                 1,
@@ -728,17 +780,49 @@ class GamePage(QWidget):
             label.setPixmap(scaled)
             label.show()
 
-        any_visible = any(
+        any_character = any(
             label.pixmap() is not None
             and not label.pixmap().isNull()
             for label in self.character_labels
         )
-        self.stage_hint.setVisible(
-            not any_visible
+        has_background = (
+            self.background_label.pixmap() is not None
+            and not self.background_label.pixmap().isNull()
         )
+        self.stage_hint.setVisible(
+            not any_character
+            and not has_background
+        )
+
+    def _render_background(self) -> None:
+        asset = self._background_asset
+        if not isinstance(asset, dict):
+            self.background_label.clear()
+            self.background_label.hide()
+            return
+
+        local_path = str(
+            asset.get("local_path", "")
+        ).strip()
+        pixmap = QPixmap(local_path)
+        if pixmap.isNull():
+            self.background_label.clear()
+            self.background_label.hide()
+            return
+
+        scaled = pixmap.scaled(
+            max(1, self.visual_area.width()),
+            max(1, self.visual_area.height()),
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self.background_label.setPixmap(scaled)
+        self.background_label.show()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        if hasattr(self, "background_label"):
+            self._render_background()
         if (
             hasattr(self, "character_labels")
             and 0 <= self._segment_index
