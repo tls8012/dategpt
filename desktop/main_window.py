@@ -232,6 +232,7 @@ class GamePage(QWidget):
         self._segment_index = -1
         self._presentation_complete = True
         self._background_asset = None
+        self._fallback_background_asset = None
         self._character_assets = []
 
         root = QVBoxLayout(self)
@@ -483,12 +484,21 @@ class GamePage(QWidget):
 
     def set_session(self, event: Dict[str, Any]) -> None:
         self._background_asset = None
+        fallback = event.get(
+            "fallback_background"
+        )
+        self._fallback_background_asset = (
+            dict(fallback)
+            if isinstance(fallback, dict)
+            else None
+        )
         self._character_assets = []
         self.background_label.clear()
         self.background_label.hide()
         for label in self.character_labels:
             label.clear()
             label.hide()
+        self._render_background()
 
         self.needs_setup = bool(
             event.get("needs_setup", False)
@@ -883,6 +893,8 @@ class GamePage(QWidget):
 
     def _render_background(self) -> None:
         asset = self._background_asset
+        if not isinstance(asset, dict):
+            asset = self._fallback_background_asset
         if not isinstance(asset, dict):
             self.background_label.clear()
             self.background_label.hide()
