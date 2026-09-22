@@ -7,6 +7,9 @@ from pathlib import Path
 
 
 def _reexec_in_repo_venv() -> None:
+    if getattr(sys, "frozen", False):
+        return
+
     desktop_dir = Path(__file__).absolute().parent
     repo_root = desktop_dir.parent
     venv_root = repo_root / ".venv"
@@ -55,6 +58,25 @@ def _reexec_in_repo_venv() -> None:
 
 _reexec_in_repo_venv()
 
+
+def _run_backend_worker_if_requested() -> None:
+    if "--backend-worker" not in sys.argv[1:]:
+        return
+
+    if not getattr(sys, "frozen", False):
+        repo_root = Path(__file__).resolve().parent.parent
+        backend_dir = repo_root / "BACKEND"
+        backend_text = str(backend_dir)
+        if backend_text not in sys.path:
+            sys.path.insert(0, backend_text)
+
+    from dategpt.stdio_worker import main as worker_main
+
+    raise SystemExit(worker_main())
+
+
+_run_backend_worker_if_requested()
+
 from PySide6.QtWidgets import QApplication
 
 from backend_client import BackendClient
@@ -65,12 +87,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="DateGPT PySide6 desktop frontend"
     )
-    parser.add_argument(
-        "--backend",
-        type=Path,
-        default=None,
-        help="Path to BACKEND/backend.py",
-    )
     return parser.parse_args()
 
 
@@ -78,12 +94,6 @@ def main() -> int:
     args = parse_args()
     desktop_dir = Path(__file__).resolve().parent
     repo_root = desktop_dir.parent
-    backend_path = (
-        args.backend
-        if args.backend is not None
-        else repo_root / "BACKEND" / "backend.py"
-    )
-
     app = QApplication(sys.argv)
     app.setApplicationName("DateGPT")
 
@@ -94,7 +104,7 @@ def main() -> int:
         )
 
     client = BackendClient(
-        backend_path,
+        entrypoint_path=Path(__file__).resolve(),
     )
     window = MainWindow(client)
     app.aboutToQuit.connect(client.shutdown)
