@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional
 
-from .settings import ModelSettingsStore
+from .settings import (
+    SUPPORTED_PROVIDERS,
+    ModelSettingsStore,
+)
 
 
 class ModelNotConfigured(RuntimeError):
@@ -31,7 +34,9 @@ class ModelFactory:
         if not settings.model:
             raise ModelNotConfigured(
                 "모델이 설정되지 않았습니다. "
-                "!모델 <openai|anthropic> <모델명> 으로 설정해 주세요."
+                "!모델 <{}> <모델명> 으로 설정해 주세요.".format(
+                    "|".join(SUPPORTED_PROVIDERS)
+                )
             )
 
         api_key, _ = self.settings_store.effective_api_key(
@@ -76,6 +81,14 @@ def _provider_kwargs(
     if provider == "anthropic":
         return {
             "anthropic_api_key": api_key,
+        }
+
+    if provider in {
+        "google_genai",
+        "xai",
+    }:
+        return {
+            "api_key": api_key,
         }
 
     raise ModelNotConfigured(

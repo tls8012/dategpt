@@ -1988,7 +1988,12 @@ class SettingsDialog(QDialog):
 
         self.provider_combo = QComboBox()
         self.provider_combo.addItems(
-            ["openai", "anthropic"]
+            [
+                "openai",
+                "anthropic",
+                "google_genai",
+                "xai",
+            ]
         )
         self.model_edit = QLineEdit()
         self.api_key_edit = QLineEdit()
@@ -2086,7 +2091,12 @@ class SettingsDialog(QDialog):
         self._snapshot = dict(snapshot)
         supported = snapshot.get(
             "supported_providers",
-            ["openai", "anthropic"],
+            [
+                "openai",
+                "anthropic",
+                "google_genai",
+                "xai",
+            ],
         )
         current_provider = str(
             snapshot.get("provider", "openai")

@@ -1,4 +1,6 @@
 langchain>=1.0,<2.0
 langchain-openai>=1.0,<2.0
 langchain-anthropic>=1.0,<2.0
+langchain-google-genai>=4.0,<5.0
+langchain-xai>=1.0,<2.0
 pydantic>=2.7,<3.0
