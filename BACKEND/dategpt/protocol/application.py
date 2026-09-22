@@ -1187,6 +1187,9 @@ class BackendApplication:
             controls=(
                 session.host.controls.snapshot()
             ),
+            control_options=_control_options(
+                session.host.controls
+            ),
             onboarding=(
                 session.onboarding.public_state()
             ),
