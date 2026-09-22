@@ -820,40 +820,10 @@ class GamePage(QWidget):
         *,
         clear_characters: bool = False,
     ) -> None:
-        records = [
-            value
-            for value in list(assets or [])
-            if isinstance(value, dict)
-        ]
-
-        background = next(
-            (
-                value
-                for value in records
-                if str(
-                    value.get("kind", "")
-                ).casefold() == "background"
-            ),
-            None,
+        self._apply_visual_state(
+            assets,
+            clear_characters=clear_characters,
         )
-        if background is not None:
-            self._background_asset = dict(
-                background
-            )
-
-        changed_characters = [
-            dict(value)
-            for value in records
-            if str(
-                value.get("kind", "")
-            ).casefold() == "character"
-        ][:3]
-
-        if clear_characters:
-            self._character_assets = []
-        elif changed_characters:
-            self._character_assets = changed_characters
-
         self._render_background()
 
         characters = list(
