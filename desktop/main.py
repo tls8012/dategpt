@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import ctypes
 import os
 import sys
 from pathlib import Path
@@ -66,6 +65,7 @@ from PySide6.QtWidgets import QApplication
 
 from backend_client import BackendClient
 from main_window import MainWindow
+from platform_focus import activate_application
 
 
 def _resource_path(*parts: str) -> Path:
@@ -94,77 +94,6 @@ def _resource_path(*parts: str) -> Path:
         if candidate.exists():
             return candidate
     return candidates[0].joinpath(*parts)
-
-
-def _activate_macos_app() -> None:
-    if (
-        sys.platform != "darwin"
-        or not getattr(sys, "frozen", False)
-    ):
-        return
-
-    try:
-        appkit = ctypes.cdll.LoadLibrary(
-            "/System/Library/Frameworks/"
-            "AppKit.framework/AppKit"
-        )
-        objc = ctypes.cdll.LoadLibrary(
-            "/usr/lib/libobjc.A.dylib"
-        )
-
-        objc.objc_getClass.restype = ctypes.c_void_p
-        objc.objc_getClass.argtypes = [
-            ctypes.c_char_p
-        ]
-        objc.sel_registerName.restype = ctypes.c_void_p
-        objc.sel_registerName.argtypes = [
-            ctypes.c_char_p
-        ]
-
-        send0 = ctypes.CFUNCTYPE(
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-        )(
-            ("objc_msgSend", objc)
-        )
-        send_bool = ctypes.CFUNCTYPE(
-            None,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_bool,
-        )(
-            ("objc_msgSend", objc)
-        )
-
-        ns_app = objc.objc_getClass(
-            b"NSApplication"
-        )
-        shared = send0(
-            ns_app,
-            objc.sel_registerName(
-                b"sharedApplication"
-            ),
-        )
-        send_bool(
-            shared,
-            objc.sel_registerName(
-                b"activateIgnoringOtherApps:"
-            ),
-            True,
-        )
-        _ = appkit
-    except Exception:
-        pass
-
-
-def _activate_window(window: MainWindow) -> None:
-    _activate_macos_app()
-    window.raise_()
-    window.activateWindow()
-    handle = window.windowHandle()
-    if handle is not None:
-        handle.requestActivate()
 
 
 def parse_args() -> argparse.Namespace:
@@ -199,17 +128,17 @@ def main() -> int:
     app.aboutToQuit.connect(client.shutdown)
     client.running_changed.connect(
         lambda running: (
-            _activate_window(window)
+            activate_application(window)
             if running
             else None
         )
     )
 
     window.show()
-    _activate_window(window)
+    activate_application(window)
     QTimer.singleShot(
         200,
-        lambda: _activate_window(window),
+        lambda: activate_application(window),
     )
     client.start()
     return app.exec()
