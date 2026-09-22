@@ -17,6 +17,7 @@ provider_hiddenimports = []
 for package_name in (
     "langchain_openai",
     "langchain_anthropic",
+    "pydantic_core",
 ):
     package_datas, package_binaries, package_hidden = (
         collect_all(package_name)
