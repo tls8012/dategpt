@@ -67,6 +67,84 @@ class AssetCatalogTests(unittest.TestCase):
                 raw.resolve(),
             )
 
+    def test_background_kind_and_metadata_are_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            distribution = Path(tmp) / "distribution"
+            assets = distribution / "assets"
+            assets.mkdir(parents=True)
+
+            background = distribution / "background.png"
+            background.write_bytes(b"fake-png")
+            character = distribution / "character.png"
+            character.write_bytes(b"fake-png")
+
+            (assets / "backgrounds.md").write_text(
+                "# Background Asset Manifest\n\n"
+                "format: `ID | kind | location | variant | path`\n"
+                "B001 | background | school_gate | "
+                "spring_cherry_blossom | background.png\n",
+                encoding="utf-8",
+            )
+            (assets / "characters.md").write_text(
+                "# Character Asset Manifest\n\n"
+                "format: `ID | character | gender | pose | path`\n"
+                "A001 | ChatGPT | female | neutral | character.png\n",
+                encoding="utf-8",
+            )
+
+            catalog = AssetCatalog(distribution)
+            resolved = catalog.resolve_ids(
+                ["B001", "A001"]
+            )
+
+            self.assertEqual(
+                [item["kind"] for item in resolved],
+                ["background", "character"],
+            )
+            self.assertEqual(
+                resolved[0]["metadata"]["location"],
+                "school_gate",
+            )
+            self.assertEqual(
+                resolved[0]["metadata"]["variant"],
+                "spring_cherry_blossom",
+            )
+            self.assertEqual(
+                resolved[1]["metadata"]["character"],
+                "ChatGPT",
+            )
+
+    def test_background_does_not_consume_character_limit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            distribution = Path(tmp) / "distribution"
+            assets = distribution / "assets"
+            assets.mkdir(parents=True)
+
+            (assets / "backgrounds.md").write_text(
+                "format: `ID | kind | location | variant | path`\n"
+                "B001 | background | room | day | bg.png\n",
+                encoding="utf-8",
+            )
+            (assets / "characters.md").write_text(
+                "format: `ID | character | pose | path`\n"
+                "A001 | One | neutral | a1.png\n"
+                "A002 | Two | neutral | a2.png\n"
+                "A003 | Three | neutral | a3.png\n",
+                encoding="utf-8",
+            )
+
+            for name in ("bg.png", "a1.png", "a2.png", "a3.png"):
+                (distribution / name).write_bytes(b"fake-png")
+
+            catalog = AssetCatalog(distribution)
+            resolved = catalog.resolve_ids(
+                ["B001", "A001", "A002", "A003"]
+            )
+            self.assertEqual(
+                [item["id"] for item in resolved],
+                ["B001", "A001", "A002", "A003"],
+            )
+
     def test_unknown_or_unsafe_asset_ids_do_not_resolve(self):
         with tempfile.TemporaryDirectory() as tmp:
             distribution = Path(tmp) / "distribution"
