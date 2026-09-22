@@ -366,6 +366,49 @@ def main() -> int:
             )
             return 1
 
+        before_hot_swap_count = len(
+            window.game._character_assets
+        )
+        window.game.apply_resolved_character_assets(
+            [
+                {
+                    "id": "A101",
+                    "kind": "character",
+                    "local_path": str(character),
+                    "metadata": {
+                        "character": "One",
+                        "gender": "female",
+                        "head_mode": "human",
+                        "outfit": "uniform",
+                        "pose": "neutral",
+                    },
+                },
+                {
+                    "id": "A102",
+                    "kind": "character",
+                    "local_path": str(character_two),
+                    "metadata": {
+                        "character": "Two",
+                        "gender": "female",
+                        "head_mode": "human",
+                        "outfit": "uniform",
+                        "pose": "neutral",
+                    },
+                },
+            ]
+        )
+        if (
+            len(window.game._character_assets)
+            != before_hot_swap_count
+            or window.game.current_character_asset_ids()
+            != ["A101", "A102"]
+        ):
+            print(
+                "head-mode SCG hot swap changed visual set",
+                file=sys.stderr,
+            )
+            return 1
+
         window.game.set_segments([
             {
                 "kind": "narration",
