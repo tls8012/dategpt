@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from ..assets import (
+    iter_asset_records,
+    resolve_authored_asset_path,
+)
 from ..bootstrap.models import ScenarioManifest
 from ..fs import safe_path_segment
 
@@ -123,6 +127,11 @@ class CartridgeLibrary:
                 inspected.path,
                 temp,
                 symlinks=False,
+            )
+            self._mirror_authored_assets(
+                source_distribution=inspected.path,
+                target_distribution=temp,
+                content_root=inspected.content_root,
             )
             copied = self.inspect_directory(temp)
 
@@ -255,6 +264,62 @@ class CartridgeLibrary:
                 )
 
         return items
+
+    @staticmethod
+    def _mirror_authored_assets(
+        *,
+        source_distribution: Path,
+        target_distribution: Path,
+        content_root: str,
+    ) -> None:
+        for record in iter_asset_records(
+            source_distribution
+        ):
+            bundled = (
+                source_distribution
+                / Path(record.path)
+            ).resolve()
+            if bundled.is_file():
+                continue
+
+            source_file = resolve_authored_asset_path(
+                source_distribution,
+                content_root,
+                record.path,
+            )
+            if source_file is None:
+                continue
+            if source_file.is_symlink():
+                raise ValueError(
+                    "asset path resolves to symlink: {}".format(
+                        record.path
+                    )
+                )
+
+            relative = Path(record.path)
+            destination = (
+                target_distribution
+                / relative
+            ).resolve()
+            try:
+                destination.relative_to(
+                    target_distribution.resolve()
+                )
+            except ValueError as exc:
+                raise ValueError(
+                    "asset path escapes installed cartridge: {}".format(
+                        record.path
+                    )
+                ) from exc
+
+            destination.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+            shutil.copy2(
+                source_file,
+                destination,
+            )
 
     @staticmethod
     def _distribution_root(
