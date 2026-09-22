@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from ..agent import AgentRunner
+from ..assets import AssetCatalog
 from ..bootstrap import (
     GameInstanceSelectionRequired,
     InitializationResult,
@@ -40,6 +41,7 @@ class ActiveSession:
     host: RuntimeHost
     runner: Any
     onboarding: OnboardingController
+    asset_catalog: AssetCatalog
 
     @property
     def workspace(self):
@@ -497,6 +499,10 @@ class BackendApplication:
             host=host,
             scenario=scenario,
         )
+        asset_catalog = AssetCatalog(
+            scenario.root,
+            content_root=result.manifest.content_root,
+        )
 
         self.active_session = ActiveSession(
             scenario=scenario,
@@ -504,6 +510,7 @@ class BackendApplication:
             host=host,
             runner=runner,
             onboarding=onboarding,
+            asset_catalog=asset_catalog,
         )
 
         return [
@@ -527,9 +534,11 @@ class BackendApplication:
                 format_version=(
                     result.manifest.format_version
                 ),
-                recent_history=(
-                    result.workspace.history.tail(100)
+                recent_history=_resolve_history_assets(
+                    result.workspace.history.tail(100),
+                    asset_catalog,
                 ),
+                asset_count=len(asset_catalog),
                 turns=(
                     result.workspace.turns.list_turns()
                     if not result.needs_setup
@@ -643,6 +652,7 @@ class BackendApplication:
             emit,
             request_id,
             result.segments,
+            asset_catalog=session.asset_catalog,
         )
 
         return [
@@ -732,6 +742,7 @@ class BackendApplication:
             emit,
             request_id,
             result.segments,
+            asset_catalog=session.asset_catalog,
         )
 
         return [
@@ -815,6 +826,7 @@ class BackendApplication:
             emit,
             request_id,
             result.segments,
+            asset_catalog=session.asset_catalog,
         )
 
         return [
@@ -1055,6 +1067,7 @@ class BackendApplication:
             emit,
             request_id,
             result.segments,
+            asset_catalog=session.asset_catalog,
         )
 
         return [
@@ -1306,6 +1319,8 @@ def _emit_presentation(
     emit: Optional[Callable[[dict], None]],
     request_id,
     segments,
+    *,
+    asset_catalog: Optional[AssetCatalog] = None,
 ) -> None:
     if emit is None or not segments:
         return
@@ -1318,12 +1333,16 @@ def _emit_presentation(
         )
     )
     for index, segment in enumerate(segments):
+        public_segment = _resolve_segment_assets(
+            segment,
+            asset_catalog,
+        )
         emit(
             _event(
                 "presentation_segment",
                 request_id,
                 index=index,
-                segment=dict(segment),
+                segment=public_segment,
             )
         )
     emit(
@@ -1333,6 +1352,47 @@ def _emit_presentation(
             total=len(segments),
         )
     )
+
+
+def _resolve_segment_assets(
+    segment,
+    asset_catalog: Optional[AssetCatalog],
+) -> dict:
+    public_segment = dict(segment)
+    asset_ids = public_segment.get("assets", [])
+    if not isinstance(asset_ids, list):
+        asset_ids = []
+    public_segment["resolved_assets"] = (
+        asset_catalog.resolve_ids(asset_ids)
+        if asset_catalog is not None
+        else []
+    )
+    return public_segment
+
+
+def _resolve_history_assets(
+    records,
+    asset_catalog: AssetCatalog,
+):
+    resolved_records = []
+    for record in records:
+        if not isinstance(record, Mapping):
+            resolved_records.append(record)
+            continue
+        item = dict(record)
+        segments = item.get("segments")
+        if isinstance(segments, list):
+            item["segments"] = [
+                _resolve_segment_assets(
+                    segment,
+                    asset_catalog,
+                )
+                if isinstance(segment, Mapping)
+                else segment
+                for segment in segments
+            ]
+        resolved_records.append(item)
+    return resolved_records
 
 
 def _event(
