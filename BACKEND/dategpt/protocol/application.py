@@ -248,6 +248,35 @@ class BackendApplication:
                     )
                 ]
 
+            if message_type == "resolve_visual_assets":
+                session = self._require_session()
+                raw_asset_ids = message.get(
+                    "asset_ids",
+                    [],
+                )
+                if not isinstance(
+                    raw_asset_ids,
+                    list,
+                ):
+                    raise ProtocolError(
+                        "INVALID_REQUEST",
+                        "asset_ids는 JSON array여야 합니다.",
+                    )
+                return [
+                    _event(
+                        "visual_assets_resolved",
+                        request_id,
+                        assets=(
+                            session.asset_catalog.resolve_ids(
+                                raw_asset_ids,
+                                head_mode=_head_mode(
+                                    session.host.controls
+                                ),
+                            )
+                        ),
+                    )
+                ]
+
             model_response = (
                 self.model_router.try_handle_message(
                     message
@@ -537,6 +566,9 @@ class BackendApplication:
                 recent_history=_resolve_history_assets(
                     result.workspace.history.tail(100),
                     asset_catalog,
+                    head_mode=_head_mode(
+                        result.controls
+                    ),
                 ),
                 asset_count=len(asset_catalog),
                 fallback_background=(
@@ -658,6 +690,9 @@ class BackendApplication:
             request_id,
             result.segments,
             asset_catalog=session.asset_catalog,
+            head_mode=_head_mode(
+                session.host.controls
+            ),
         )
 
         return [
@@ -748,6 +783,9 @@ class BackendApplication:
             request_id,
             result.segments,
             asset_catalog=session.asset_catalog,
+            head_mode=_head_mode(
+                session.host.controls
+            ),
         )
 
         return [
@@ -832,6 +870,9 @@ class BackendApplication:
             request_id,
             result.segments,
             asset_catalog=session.asset_catalog,
+            head_mode=_head_mode(
+                session.host.controls
+            ),
         )
 
         return [
@@ -1073,6 +1114,9 @@ class BackendApplication:
             request_id,
             result.segments,
             asset_catalog=session.asset_catalog,
+            head_mode=_head_mode(
+                session.host.controls
+            ),
         )
 
         return [
@@ -1326,6 +1370,7 @@ def _emit_presentation(
     segments,
     *,
     asset_catalog: Optional[AssetCatalog] = None,
+    head_mode: str = "",
 ) -> None:
     if emit is None or not segments:
         return
@@ -1341,6 +1386,7 @@ def _emit_presentation(
         public_segment = _resolve_segment_assets(
             segment,
             asset_catalog,
+            head_mode=head_mode,
         )
         emit(
             _event(
@@ -1362,13 +1408,18 @@ def _emit_presentation(
 def _resolve_segment_assets(
     segment,
     asset_catalog: Optional[AssetCatalog],
+    *,
+    head_mode: str = "",
 ) -> dict:
     public_segment = dict(segment)
     asset_ids = public_segment.get("assets", [])
     if not isinstance(asset_ids, list):
         asset_ids = []
     public_segment["resolved_assets"] = (
-        asset_catalog.resolve_ids(asset_ids)
+        asset_catalog.resolve_ids(
+            asset_ids,
+            head_mode=head_mode,
+        )
         if asset_catalog is not None
         else []
     )
@@ -1378,6 +1429,8 @@ def _resolve_segment_assets(
 def _resolve_history_assets(
     records,
     asset_catalog: AssetCatalog,
+    *,
+    head_mode: str = "",
 ):
     resolved_records = []
     for record in records:
@@ -1391,6 +1444,7 @@ def _resolve_history_assets(
                 _resolve_segment_assets(
                     segment,
                     asset_catalog,
+                    head_mode=head_mode,
                 )
                 if isinstance(segment, Mapping)
                 else segment
@@ -1398,6 +1452,17 @@ def _resolve_history_assets(
             ]
         resolved_records.append(item)
     return resolved_records
+
+
+def _head_mode(
+    controls: ControlState,
+) -> str:
+    return str(
+        controls.extra.get(
+            "head_mode",
+            "",
+        )
+    ).strip()
 
 
 def _event(
